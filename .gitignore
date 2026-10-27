@@ -1,4 +1,10 @@
 Binaries/
+/Binaries
+/Plugins/Puerts/Binaries
+/Releases
+/Typing
+/Content/Vge/Materials
+/Content/Characters/Mannequins
 Intermediate/
 Saved/
 DerivedDataCache/
