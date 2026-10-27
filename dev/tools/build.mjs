@@ -88,6 +88,10 @@ async function buildMaterialModule(file, key) {
   return handleModule(exports, paths);
 }
 
+// createServer above (the materials environment) sets process.env.NODE_ENV to 'development' for this whole process,
+// and Vite takes import.meta.env.DEV from it: without this the release bundle is a dev bundle, whose HUD page is
+// loaded from the dev server and whose lab index imports every lab's models into the release.
+process.env.NODE_ENV = 'production';
 const builder = await createBuilder({
   configFile: false,
   root: devDir,
