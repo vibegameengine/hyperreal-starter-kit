@@ -385,14 +385,29 @@ and the animation units were then fixed in the asset step without C++.
    `forest.pcg.ts`, `destruction.niagara.ts`, `sky.material.tsx`, no
    `<id>.lab.ts`, no `<model>.mesh.json` sidecar, and no new postfix of any
    other kind. A file is named for what it is; what kind of thing it holds is
-   said by its folder and by the code inside it. Do not add a new file with a
-   postfix, do not copy an existing postfixed file as a template, and do not
-   build tooling that finds files by such a postfix. The files that still carry
-   one are the defect being removed, not a convention to follow.
+   said by the code inside it, never by its name or its folder. Do not add a
+   new file with a postfix, do not copy an existing postfixed file as a
+   template, and do not build tooling that finds files by name or folder. The
+   files that still carry one are the defect being removed, not a convention to
+   follow.
 
    What it cost: on 2026-10-30 an agent added `porsche.vehicle.ts` because
    `car.vehicle.ts` was there, and the owner had to stop the work to say this
    naming is garbage and must never be written again.
+
+9a. **NO CONFIG FILES FOR IMPORTS OR BEHAVIOUR. EVERYTHING IS DESCRIBED IN TSX.**
+   JSON files as such are not banned (data, generated output, measurements).
+   What is banned is describing in a JSON (or any config file) how content is
+   imported or processed by the content pipeline and the cooker, or how a thing
+   behaves in the game: a cloth's constraints, a character's outfit assembly, a
+   vehicle's wheels.
+   - How something is imported may be said in the import line's query
+     (`grid.glb?nanite=off`, `?skeleton=...`, `?lods=...`). That is the edge of
+     what is allowed, not a place to grow new formats.
+   - How it behaves in the game is business logic, written in TSX/TS code
+     beside the code that uses it.
+   - `cloth=<file>.json` in an import line is the defect this rule names; the
+     cloth's behaviour moves into code.
 
 ## Roles
 
