@@ -16,6 +16,9 @@ const SSS_COLOR = [0.12, 0.55, 0.45];
 const FOAM_ALBEDO = 0.85;
 const FOAM_SCALE = 0.09;
 const NEAR = { k1: 7.3, k2: 3.1, a1: 0.63, a2: 2.14 };
+const SWASH_ONSET = SHORE.swashOnset;
+const SWASH_FOAM_END = 0.9;
+const RIPPLE_DEPTH = { dry: 0.0, full: 0.6 };
 const fixed = (value: number) => value.toFixed(6);
 const vec3 = (values: readonly number[]) => `float3(${values.map(fixed).join(', ')})`;
 const SHORE_MATH = shoreMath(CASCADE_SIZES);
@@ -114,7 +117,7 @@ float swashLevel = -1e4;
 float waveDepth = -math.WaveHeightAt(H, worldXY);
 bool nearShore = depth < ${fixed(SHORE.deep)} && shoreOn > 0.5;
 if (nearShore) {
-  OceanShoreSample sw = math.Evaluate(H, S, worldXY, waveDepth, ground);
+  OceanShoreSample sw = math.Evaluate(H, S, worldXY, waveDepth, ground, sp * 2.0);
   extra += sw.disp;
   shoreN = clamp(sw.nShore, -1.0, 1.0);
   shoreFoam = sw.foam;
@@ -169,6 +172,7 @@ const surface = (
       view: <cameraVectorWS />,
       eye: <cameraPositionWS />,
       facing: <twoSidedSign />,
+      layersOff: <scalarParameter parameterName="OceanLayersOff" defaultValue={0} />,
       sun: <skyAtmosphereLightDirection lightIndex={0} />,
       sunIllum: <skyAtmosphereLightIlluminance lightIndex={0} />,
       ...shoreTextures,
@@ -200,7 +204,7 @@ float footprint = max(length(fwidth(lag)), 1e-4);
 float4 d = 0;
 ${CASCADE_SIZES.map((size, c) => `d += R${c}.Sample(R${c}Sampler, lag / ${fixed(size)}) * math.CascadeAttenuation(${c}, depth);`).join('\n')}
 float2 slopes = float2(d.x / max(d.z + 1.0, 0.2), d.y / max(d.w + 1.0, 0.2));
-float near = smoothstep(0.04, 0.01, footprint);
+float near = smoothstep(0.04, 0.01, footprint) * smoothstep(${fixed(RIPPLE_DEPTH.dry)}, ${fixed(RIPPLE_DEPTH.full)}, depth);
 if (near > 0.002) {
   float4 c1 = R${finest}.SampleLevel(R${finest}Sampler, ${rotate('lag', NEAR.a1)} * ${fixed(NEAR.k1 / finestSize)}, max(log2(footprint / ${fixed(finestSize / NEAR.k1 / FFT_SIZE)}), 0.0));
   float4 c2 = R${finest}.SampleLevel(R${finest}Sampler, ${rotate('lag', NEAR.a2)} * ${fixed(NEAR.k2 / finestSize)}, max(log2(footprint / ${fixed(finestSize / NEAR.k2 / FFT_SIZE)}), 0.0));
@@ -231,16 +235,18 @@ if (depth < 1.0 && shoreOn > 0.5) {
     thickness = min(tRaw, frontD * lerp(0.08, 0.025, backwash));
   }
 }
-float uprush = smoothstep(0.46, 0.32, swTau);
+float uprush = smoothstep(0.0, ${fixed(SWASH_ONSET)}, swTau) * smoothstep(0.46, 0.32, swTau);
 float bead = smoothstep(-0.01, 0.05, frontD) * smoothstep(0.6, 0.12, frontD);
 float trail = smoothstep(-0.01, 0.25, frontD) * smoothstep(2.2, 0.3, frontD);
 float edgePatch = 1.0;
 if (swRt > 0.0 && depth < 0.4) edgePatch = smoothstep(-0.45, 0.55, math.Perlin2(xz * 0.42)) * 0.7 + smoothstep(-0.3, 0.6, math.Perlin2(xz * 1.7 + float2(3.1, 7.7))) * 0.3;
-float edgeFoam = (bead * lerp(0.45, 1.1, uprush) * lerp(0.35, 1.0, edgePatch) + trail * lerp(0.12, 0.4, uprush) * edgePatch) * smoothstep(0.0, 1.0, swRt) * smoothstep(0.4, -0.2, depth);
+float foamLife = smoothstep(0.0, ${fixed(SWASH_ONSET)}, swTau) * smoothstep(${fixed(SWASH_FOAM_END)}, 0.32, swTau);
+float edgeFoam = (bead * lerp(0.45, 1.1, foamLife) * lerp(0.35, 1.0, edgePatch) + trail * lerp(0.12, 0.4, foamLife) * edgePatch) * smoothstep(0.0, 1.0, swRt) * smoothstep(0.4, -0.2, depth);
 float2 stateUv = (xz - ${fixed(SHORE_ORIGIN)}) / ${fixed(SHORE_EXTENT)};
 float4 simState = shoreOn > 0.5 ? St.SampleLevel(StSampler, stateUv, 0.0) * sf.Inside(xz) : 0.0;
-float simFoam = simState.x * (1.0 - face * 0.72);
-float fresh = shoreFoam + edgeFoam;
+uint off = uint(layersOff + 0.5);
+float simFoam = simState.x * (1.0 - face * 0.72) * ((off & 2u) != 0u ? 0.0 : 1.0);
+float fresh = shoreFoam * ((off & 4u) != 0u ? 0.0 : 1.0) + edgeFoam * ((off & 32u) != 0u ? 0.0 : 1.0);
 float foamSum = simFoam + fresh * 0.55 + wakeHere.w;
 float aeration = saturate(fresh * 1.2 + simFoam * 0.7) * (1.0 - face) * smoothstep(-0.1, 0.3, depth);
 float whitecaps = vfoamIn.x + saturate((${fixed(FOAM.bias)} - 0.15 - jac) * 2.0);
@@ -258,7 +264,7 @@ float foam = saturate(lerp(detail, coverage * 0.85, far));
 float4 fieldHere = math.ShoreSample(S, xz);
 float2 waveDir = fieldHere.yz / max(length(fieldHere.yz), 1e-4);
 SurfFoamArgs fa;
-fa.coverage = coverage; fa.foam = foam; fa.footprint = footprint; fa.depth = depth; fa.bubbles = p1.y;
+fa.coverage = coverage; fa.foam = foam; fa.footprint = max(length(fwidth(xz)), 1e-4); fa.depth = depth; fa.bubbles = p1.y;
 fa.lagXZ = lag; fa.normal = nY; fa.baseNormal = Ns; fa.fresh = fresh; fa.sim = simFoam; fa.simState = simState; fa.roller = surf.z;
 fa.P = float3(xz.x, wpos.z / 100.0, xz.y); fa.sun = normalize(float3(sun.x, sun.z, sun.y));
 SurfFoamInfo info = sf.Shade(Lc, LcSampler, fa, waveDir);
@@ -281,7 +287,7 @@ float alpha2 = ${fixed(WATER_ROUGHNESS * WATER_ROUGHNESS)} + mss * 2.0 * unresol
 Foam = foam;
 Rough = pow(alpha2, 0.25);
 Medium = float2(math.SurfMedium(fieldHere, depth) * (saturate(simState.x * 2.5) * 1.8 + 0.45), aeration);
-Edge = smoothstep(0.0, clamp(fwidth(thickness) * 1.5, 0.004, 0.03), thickness);
+Edge = smoothstep(0.0, clamp(fwidth(thickness) * 1.5, 0.004, 0.03), thickness) * ((off & 1u) != 0u && depth < 1.0 ? 0.0 : 1.0);
 float3 L = normalize(float3(sun.x, sun.z, sun.y));
 float3 Tr = refract(-V, nY, 1.0 / 1.33);
 float3 Tv = normalize(float3(Tr.x, min(Tr.y, -0.08), Tr.z));

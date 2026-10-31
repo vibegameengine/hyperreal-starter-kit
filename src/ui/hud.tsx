@@ -13,6 +13,7 @@ import { MainSceneHud } from './hud/MainSceneHud';
 import { MannequinLabHud } from './hud/MannequinLabHud';
 import { MaterialsLabHud } from './hud/MaterialsLabHud';
 import { NaniteLabHud } from './hud/NaniteLabHud';
+import { OceanLayersHud } from './hud/OceanLayersHud';
 import { ParticlesLabHud } from './hud/ParticlesLabHud';
 import { PhysicsLabHud } from './hud/PhysicsLabHud';
 import { RagdollLabHud } from './hud/RagdollLabHud';
@@ -30,6 +31,7 @@ createRoot(document.getElementById('root')!).render(
     <PlaygroundLabHud />
     <FlightCaseLabHud />
     <NaniteLabHud />
+    <OceanLayersHud />
     <SpinningCubesLabHud />
     <InstancingLabHud />
     <LumenLabHud />

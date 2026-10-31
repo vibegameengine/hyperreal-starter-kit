@@ -48,7 +48,7 @@ float SprayWake(float2 xz) {
 float3 SprayWaterDisp(OceanShoreMath math, float2 x0) {
   float ground = math.HeightAt(0, x0);
   float3 d = BreakerFftDisp(math, x0, -ground);
-  if (-ground < ${num(SHORE.deep)}) d += math.Evaluate(0, 1, x0, -math.WaveHeightAt(0, x0), ground).disp;
+  if (-ground < ${num(SHORE.deep)}) d += math.Evaluate(0, 1, x0, -math.WaveHeightAt(0, x0), ground, 0.0).disp;
   d.y += SprayWake(x0);
   return d;
 }

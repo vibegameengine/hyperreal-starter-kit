@@ -20,6 +20,8 @@ export const SHORE = {
   turbidity: 0.16,
   beachSlope: 0.066,
   swashUp: 0.4,
+  swashOnset: 0.2,
+  boreFoamFade: 1.5,
   swashDown: 0.55,
   swashOvershoot: 1.2,
   deep: 26,
@@ -162,17 +164,18 @@ const WAVES = `
     P.Wt = lerp(P.H * lerp(0.25, 0.55, Bs(P, 0.1, 0.9)), P.Hb * 0.6 + 0.08, P.wBore);
     return P;
   }
-  float FaceFill(OceanShoreBreak P, float s) { float k = (1.0 - s) * 0.45; return Bs(P, k + 0.9, k + 1.08); }
+  float FaceFill(OceanShoreBreak P, float s) { float k = (1.0 - s) * 0.45; return smoothstep(k + 0.9, k + 1.08, P.b); }
   float Whitewater(float xi, float lam, OceanShoreBreak P) {
-    float landed = Bs(P, 0.86, 0.99);
-    float spread = saturate((P.b - 0.9 + P.bw) / (0.45 + 2.0 * P.bw));
+    float landed = smoothstep(0.86, 0.99, P.b);
+    float spread = saturate((P.b - 0.9) / 0.45);
     float reach = P.Xi * 0.25 + spread * (P.Xi * 0.9 + 1.0);
-    float impact = landed * smoothstep(reach, reach * 0.6, abs(xi - P.Xi)) * (1.0 - Bs(P, 1.4, 1.9));
+    float impact = landed * smoothstep(reach, reach * 0.6, abs(xi - P.Xi)) * (1.0 - smoothstep(1.4, 1.9, P.b));
     float toe = P.Xc + P.Wt;
     float faceFill = FaceFill(P, saturate((xi - P.Xc) / max(P.Wt, 0.05)));
-    float ahead = exp((xi - toe) * -3.0) * P.wBore;
-    float behind = exp((P.Xc - xi) / lam * -16.0) * P.wBore;
-    float roller = xi > toe ? ahead : (xi < P.Xc ? behind : max(faceFill, P.wBore));
+    float wFoam = smoothstep(0.85, 1.35, P.b);
+    float ahead = exp((xi - toe) * -3.0) * wFoam;
+    float behind = exp((P.Xc - xi) / lam * -16.0) * wFoam;
+    float roller = xi > toe ? ahead : (xi < P.Xc ? behind : max(faceFill, wFoam));
     return saturate(max(impact, roller));
   }
   OceanShoreProfile Profile(float u, float lam, OceanShoreBreak P, bool withFoam) {
@@ -206,8 +209,8 @@ const WAVES = `
       r.foam = Whitewater(r.x - u * lam, lam, P);
       bool onFace = front && inFace;
       float faceFill = FaceFill(P, fx);
-      r.face = (onFace ? 1.0 : 0.0) * Bs(P, -0.4, 0.0) * (1.0 - faceFill);
-      r.roller = (front ? (inFace ? 1.0 : 0.0) : exp(u * -25.0)) * P.wBore * P.Hb * wC;
+      r.face = (onFace ? 1.0 : 0.0) * smoothstep(-0.4, 0.0, P.b) * (1.0 - faceFill);
+      r.roller = (front ? (inFace ? 1.0 : 0.0) : exp(u * -25.0)) * smoothstep(0.85, 1.35, P.b) * P.Hb * wC;
     }
     return r;
   }
@@ -228,6 +231,10 @@ const WAVES = `
     ph.s = (time - ph.T) / ${f(SHORE.period)} + Wobble(ph.along);
     return ph;
   }
+  float Drain(float along, float m) {
+    float shape = 0.5 + 0.2 * sin(along * 0.23 + 1.3) + 0.13 * sin(along * 0.57 + 4.1) + 0.1 * sin(along * 1.31 + 2.2) + 0.07 * sin(along * 2.9 + 0.7);
+    return shape * (0.55 + 0.45 * Hash1(m * 1.37 + 5.1));
+  }
   OceanShoreRunup SwashRunup(float4 sh, float along, float groundH) {
     OceanShoreRunup r;
     float Tp = ${f(SHORE.period)};
@@ -243,10 +250,15 @@ const WAVES = `
     r.isUp = r.tau < ${f(SHORE.swashUp)};
     float Rh = (r.isUp ? 1.0 - pow(1.0 - r.su, 1.5) : 1.0 - pow(r.sb, 1.6)) * r.RhMax - 0.3;
     float lobes = sin(along * 0.61 + ms * 2.3) * 0.5 + sin(along * 1.73 + ms * 5.1) * 0.3 + sin(along * 4.3 + ms * 1.7) * 0.2;
-    float drain = 0.5 + 0.3 * sin(along * 0.23 + ms * 1.9 + 1.3) + 0.2 * sin(along * 0.57 + ms * 3.7 + 4.1);
+    float drain = lerp(Drain(along, ms), Drain(along, ms + 1.0), r.tau);
     float floorRt = ${f(SHORE.filmFloor)} + drain * ${f(SHORE.filmReach)};
-    r.Rt = max(Rh + lobes * (max(Rh, 0.0) * 0.07 + 0.35), floorRt) * enabled;
+    float lobedRh = Rh + lobes * (max(Rh, 0.0) * 0.07 + 0.35);
+    r.Rt = max(lobedRh, floorRt) * enabled;
+    r.edgeTau = lerp(r.tau, 1.0, smoothstep(-0.3, 0.3, floorRt - lobedRh));
     return r;
+  }
+  float UnderSheet(float front, float groundH) {
+    return lerp(1.0, smoothstep(0.0, ${f(SHORE.boreFoamFade)}, front), smoothstep(-0.1, 0.05, groundH));
   }
   float4 SwashEdge(Texture2D H, Texture2D S, float2 p, float t) {
     float4 o = float4(t, 1e3, 0.0, 0.0);
@@ -257,7 +269,7 @@ const WAVES = `
         OceanShoreRunup r = SwashRunup(ph.sh, ph.along, g);
         float front = r.Rt - r.inland;
         float w = smoothstep(-0.8, -0.4, g) * smoothstep(0.3, 0.15, t);
-        if (w > 0.0) o = float4(lerp(t, min(t, front * 0.08), w), front / max(w, 1e-3), r.tau, r.Rt * w);
+        if (w > 0.0) o = float4(lerp(t, min(t, front * 0.08), w), front / max(w, 1e-3), r.edgeTau, r.Rt * w);
       }
     }
     return o;
@@ -272,7 +284,7 @@ const WAVES = `
     float a = smoothstep(0.0, d0[c], depth);
     return lerp(floorAmt[c] * smoothstep(0.0, 0.6, depth), 1.0, a);
   }
-  OceanShoreSample Evaluate(Texture2D H, Texture2D S, float2 xz, float depth, float groundH) {
+  OceanShoreSample Evaluate(Texture2D H, Texture2D S, float2 xz, float depth, float groundH, float overshoot) {
     OceanShorePhase ph = PhaseAt(H, S, xz);
     float Tp = ${f(SHORE.period)};
     float d = depth;
@@ -319,13 +331,13 @@ const WAVES = `
     }
     OceanShoreRunup swr = SwashRunup(ph.sh, ph.along, groundH);
     float front = swr.Rt - swr.inland;
-    float fm = front + ${f(SHORE.swashOvershoot)};
+    float fm = front + max(${f(SHORE.swashOvershoot)}, overshoot);
     float thick = clamp(min(fm * 0.3, max(fm - 0.1, 0.0) * (${f(SHORE.beachSlope)} * 0.22) + 0.03), -0.1, 0.12);
     float wwPatch = 0.0;
-    if (s0.foam * env != 0.0) wwPatch = smoothstep(-0.5, 0.45, Perlin2(float2(ph.along * 0.06 + time * 0.05, m * 2.9 + 0.4)));
+    if (s0.foam * env != 0.0) wwPatch = smoothstep(-0.5, 0.45, Perlin2(float2(ph.along * 0.06, m * 2.9 + 0.4)));
     OceanShoreSample o;
     o.disp = disp; o.nShore = nShore; o.env = env;
-    o.foam = s0.foam * env * lerp(0.3, 1.0, wwPatch);
+    o.foam = s0.foam * env * lerp(0.3, 1.0, wwPatch) * UnderSheet(front, groundH);
     o.swashLevel = groundH + thick; o.face = face; o.roller = roller;
     return o;
   }
@@ -386,7 +398,7 @@ const WAVES = `
     float front = swr.Rt - swr.inland;
     bool covered = front > 0.0;
     float dRdt = (swr.isUp ? pow(1.0 - swr.su, 0.5) * (1.5 / ${f(SHORE.swashUp)}) : pow(max(swr.sb, 1e-3), 0.6) * (-1.6 / ${f(SHORE.swashDown)})) * swr.RhMax / Tp;
-    float uprush = smoothstep(0.46, 0.32, swr.tau);
+    float uprush = smoothstep(0.0, ${f(SHORE.swashOnset)}, swr.edgeTau) * smoothstep(0.46, 0.32, swr.edgeTau);
     float edge = smoothstep(0.8, 0.0, front) * smoothstep(-0.05, 0.05, front) * uprush * smoothstep(0.0, 1.0, swr.Rt);
     float uWave = clamp(c * eta / (max(d, 0.0) + max(eta, d * -0.8) + 0.15), -2.5, 4.0);
     float rel = saturate(swr.inland / max(swr.Rt, 0.5));
@@ -394,9 +406,9 @@ const WAVES = `
     float wSwash = smoothstep(0.3, 0.05, d);
     float uFlow = lerp(uWave, uSwash, wSwash) * ((covered || d > 0.02) ? 1.0 : 0.0);
     float wwPatch = 0.0;
-    if (whitewater * env != 0.0) wwPatch = smoothstep(-0.5, 0.45, Perlin2(float2(ph.along * 0.06 + time * 0.05, m * 2.9 + 0.4)));
+    if (whitewater * env != 0.0) wwPatch = smoothstep(-0.5, 0.45, Perlin2(float2(ph.along * 0.06, m * 2.9 + 0.4)));
     OceanShoreWorld o;
-    o.foam = whitewater * env * lerp(0.3, 1.0, wwPatch);
+    o.foam = whitewater * env * lerp(0.3, 1.0, wwPatch) * UnderSheet(front, groundH);
     o.swashFoam = edge * 0.9;
     o.runup = swr.Rt; o.inland = swr.inland;
     o.dir = ph.dir; o.flow = ph.dir * uFlow;
@@ -408,7 +420,7 @@ export const shoreMath = (cascadeSizes: readonly number[], access: ShoreAccess =
 struct OceanShoreBreak { float4 taps; float bw; float db; float b; float Ash; float p; float meanP; float crestPeak; float yc; float yt; float H; float wBore; float Xi; float Hb; float ycB; float ytB; float Xc; float Wt; };
 struct OceanShoreProfile { float x; float y; float b; float foam; float face; float roller; };
 struct OceanShorePhase { float4 sh; float T; float2 dir; float exposure; float along; float s; };
-struct OceanShoreRunup { float tau; float Rt; float inland; float RhMax; float su; float sb; bool isUp; };
+struct OceanShoreRunup { float tau; float edgeTau; float Rt; float inland; float RhMax; float su; float sb; bool isUp; };
 struct OceanShoreSample { float3 disp; float3 nShore; float env; float foam; float swashLevel; float face; float roller; };
 struct OceanShoreWorld { float foam; float swashFoam; float runup; float inland; float2 dir; float2 flow; };
 struct OceanShoreMath {
