@@ -3,14 +3,28 @@
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "ArrayBuffer.h"
+#include "PoseSearch/PoseSearchLibrary.h"
 #include "VgeScriptLibrary.generated.h"
 
 class UActorComponent;
 class UAnimInstance;
 class UInstancedStaticMeshComponent;
+class UPoseSearchDatabase;
 class ULevelStreamingDynamic;
 class USkeletalMeshComponent;
 class UTexture2D;
+
+USTRUCT(BlueprintType)
+struct FVgeFrameTimes
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Vge")
+	float GameMs = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Vge")
+	float GpuMs = 0;
+};
 
 // Engine calls the scene renderer needs and Unreal does not expose as UFunctions.
 UCLASS()
@@ -41,8 +55,20 @@ public:
 	static FString DescribeMotionMatching(UAnimInstance* Instance);
 
 	UFUNCTION(BlueprintCallable, Category = "Vge")
+	static bool SetMotionMatchingDatabase(UAnimInstance* Instance, UPoseSearchDatabase* Database, EPoseSearchInterruptMode InterruptMode);
+
+	UFUNCTION(BlueprintCallable, Category = "Vge")
+	static int32 SetAnimNodeFields(UAnimInstance* Instance, const FString& NodeStruct, const FString& FieldsJson);
+
+	UFUNCTION(BlueprintCallable, Category = "Vge")
 	static void SetInstances(UInstancedStaticMeshComponent* Component, const TArray<FTransform>& Transforms, const TArray<float>& CustomData);
 
 	UFUNCTION(BlueprintCallable, Category = "Vge")
 	static UTexture2D* CreateFloatTexture(int32 Width, int32 Height, FArrayBuffer Pixels);
+
+	UFUNCTION(BlueprintCallable, Category = "Vge")
+	static FVgeFrameTimes FrameTimes();
+
+	UFUNCTION(BlueprintCallable, Category = "Vge", meta = (WorldContext = "WorldContext"))
+	static void RefreshWaterZones(UObject* WorldContext);
 };

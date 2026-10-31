@@ -12,6 +12,8 @@ import walking from './animations/walking.fbx?skeleton=../default-humanoid.fbx';
 import walkingOnManny from './animations/walking.fbx?skeleton=../default-humanoid.fbx&retarget=manny';
 import walkingBackwards from './animations/walking-backwards.fbx?skeleton=../default-humanoid.fbx';
 import walkingBackwardsOnManny from './animations/walking-backwards.fbx?skeleton=../default-humanoid.fbx&retarget=manny';
+import rigforgeJog from './motion/jog_loop.fbx?skeleton=rig.fbx';
+import rigforgeJogOnManny from './motion/jog_loop.fbx?skeleton=rig.fbx&retarget=manny';
 
 export { mixamo, mixamoWithMannyClips };
 
@@ -22,5 +24,6 @@ export const MIXAMO_CLIPS = {
   walkingBackwards: { clip: walkingBackwards, onManny: walkingBackwardsOnManny },
   runningBackward: { clip: runningBackward, onManny: runningBackwardOnManny },
   walkStrafeRight: { clip: walkStrafeRight, onManny: walkStrafeRightOnManny },
+  rigforgeJog: { clip: rigforgeJog, onManny: rigforgeJogOnManny },
 };
 export type MixamoClip = keyof typeof MIXAMO_CLIPS;

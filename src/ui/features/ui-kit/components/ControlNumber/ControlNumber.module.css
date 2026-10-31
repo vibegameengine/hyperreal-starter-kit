@@ -1,0 +1,53 @@
+.field {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid rgb(161 221 255 / 22%);
+  border-radius: 4px;
+  background: rgb(120 199 239 / 7%);
+  cursor: ew-resize;
+  user-select: none;
+}
+
+.field:hover {
+  border-color: rgb(161 221 255 / 45%);
+  background: rgb(120 199 239 / 13%);
+}
+
+.field[aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.label {
+  overflow: hidden;
+  color: rgb(224 245 255 / 72%);
+  font: 800 9px/1 'Trebuchet MS', system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.value,
+.input {
+  min-width: 0;
+  color: rgb(238 250 255 / 88%);
+  font: 800 10px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.input {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  cursor: text;
+}

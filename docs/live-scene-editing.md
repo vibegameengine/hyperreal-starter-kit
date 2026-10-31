@@ -735,7 +735,8 @@ In a dev game (`npm run dev`, then the shell):
 
 | Input | Does |
 |---|---|
-| Play / Edit in the shell's title bar, or F8 | enter / leave edit mode: the world pauses, the view moves to the edit camera; leaving resumes and gives the view back |
+| Play / Edit in the shell's title bar, or F8 | enter / leave edit mode, as Unreal's eject from the player: the world keeps running, the player's input is held (the character stands, the mouse is not captured, the lab camera stays), the view moves to the edit camera; leaving gives the view and the input back and resumes a paused world |
+| Pause / Resume in the title bar (shown in edit mode), or the Pause key | pause or resume the world while editing, as Unity's and Unreal's pause button; edits to props show at once in a running world, and in a paused one only once something evaluates them again |
 | G, R, S | choose the move, rotate or scale tool; they move nothing by themselves |
 | left click | select the object under the cursor (actors, components, packed instances) |
 | Shift + left click | add the object to the selection, or take it out |
@@ -772,6 +773,117 @@ In a dev game (`npm run dev`, then the shell):
 - Events are Blender's: PRESS, RELEASE, CLICK, CLICK_DRAG (3 px), DOUBLE_CLICK
   (350 ms), key repeat (`events.ts`). A binding can be rebound or turned off by layer and label
   (`setBindingOverrides`).
+
+### The prop card
+
+With one object selected, a card appears beside it in the game's HUD with the
+props of the component that rendered it, and goes when the selection does.
+Every prop of the component is there; nothing has to be registered for it.
+
+- **Which component.** The selection's owner chain (`ownerChainOf`, the host
+  element and every function component above it that has a source location).
+  The card opens on the component nearest the scene, the call the scene or lab
+  itself writes (for the girl player: `TripoGirl`, not the `Player` it
+  renders); when more than one is located, a row of buttons at the top switches
+  to another.
+- **Picking.** A click is traced by object type (WorldStatic, WorldDynamic,
+  Pawn, PhysicsBody, Vehicle, Destructible), not by the Visibility channel: a
+  character's capsule and mesh ignore Visibility (`CharacterMesh` profile), so a
+  Visibility trace went through her and the click selected nothing.
+- **Which props.** The attributes written at the component's call site and the
+  names destructured in its first parameter, with their literal defaults
+  (`vge/edit/propSource.mjs`, `componentProps`), merged with the props the
+  component holds at run time. Props whose values are not plain data (engine
+  objects, functions, elements) are left out.
+- **Metadata**, in the form of Storybook's `argTypes`, attached to the component
+  with `defineEditable` from `src/shared/react`:
+
+  ```tsx
+  defineEditable({
+    component: SpinningCubes,
+    title: 'Spinning cubes',
+    argTypes: {
+      count: { control: { type: 'range', min: 1, max: 10, step: 1 }, description: 'How many cubes stand in the row' },
+      degreesPerSecond: { name: 'Spin', control: { type: 'range', min: -360, max: 360, step: 5 } },
+    },
+  });
+  ```
+
+  The fields are Storybook's: `control` (a type, or `{ type, min, max, step,
+  labels }`, or `false` to hide the prop), `name`, `description`, `options`,
+  `table.readonly`, `table.disable`. The call stays in the component's module
+  and is not exported, so the module stays a React Refresh boundary.
+- **Controls.** A number with `min` and `max` (or `control: 'range'`) is a
+  slider; another number is a Blender-style field: drag sideways, Shift for
+  precision, click to type, Enter, Escape. A vector of 2-4 numbers is a row of
+  such fields, a boolean a toggle, `options` a choice, a string a text field. A
+  plain object is a group of its entries.
+- **Dictionary keys.** `keys` on an `argType` (a list, or a function of `{ props, object }`) names every entry the card shows for a dictionary prop, written or not; an entry without its own value shows `template` (also a function of `{ props, object }`), which for `TripoGirl` is the clip-wide `armSpace` / `legSpace`, so each row shows the value that applies. `TripoGirl` lists the clips of its built PoseSearch databases (`useDatabaseClipNames`, `entities/motionClip.ts`): a `*.motion.ts` module reaches the game only as its `defineMotionMatching` exports, so a clip list exported beside them does not.
+- **Live key.** A prop whose value is a dictionary can name the entry that
+  matters now: `liveKey: ({ props, object }) => string | undefined` on its
+  `argType`, called every frame with the component's props and the selected
+  engine object. The card shows only that entry, marked "current clip", and
+  writes into it; its fields are `template` merged with the entry, or the first
+  entry when there is no `template`, each shown with the control from
+  `fields[name]`; the first write to a missing entry adds it. This is for
+  settings per animation clip, where the prefab knows which clip is playing:
+  `TripoGirl` has `clipPosture={{ walk_loop: { arm: 6 } }}`, its `liveKey` is
+  the clip motion matching selected (`currentClipOf`,
+  `src/features/character/entities/motionClip.ts`, from
+  `VgeScriptLibrary.DescribeMotionMatching`), and its posture eases to the
+  playing clip's arm and leg space, falling back to `armSpace` / `legSpace`.
+- **Layout.** The card sits beside the selection's screen-space bounds (32 px
+  right of its right edge, or left of its left edge when the right has no
+  room) and in the middle of the screen vertically, no taller than the screen;
+  longer content scrolls. The place is worked out again only when the view
+  changes (camera location to 1 cm, rotation to 0.1°, field of view, viewport
+  size) or the selection does; an animated pose that widens the bounds under a
+  still camera does not move the card.
+- **Traffic to the HUD.** The card's content (`edit/card`) is sent only when it
+  changes and its place (`edit/card-place`, snapped to 4 px) separately; the
+  HUD sets the place on the element's style without a React render. Sending
+  the whole card each frame was measured at 44 messages a second of 3.1 KB,
+  each re-rendering the card, and the card lagged; after the split, with the
+  girl selected and idle: 0 content and 0.3 place messages a second.
+- **Why every HUD felt slow, and what the HUD's frame rate is.** The HUD page
+  itself ran at 60 frames a second with no long tasks (`vge:hud-probe` in
+  `src/ui/bridge.ts`: the game asks, the page counts its `requestAnimationFrame`
+  frames and long tasks and posts `vge:hud-probe-result`; with `repaint: true`
+  it repaints a 2 px marker every frame). Its frames reach the screen once per
+  game frame: the engine pumps CEF from the game thread
+  (`external_message_pump`, `WebBrowserSingleton.cpp:340`,
+  `FCEFBrowserApp::TickMessagePump`) and copies each frame with a GPU sync
+  (`CopySharedTextureSync`, `CEFWebBrowserWindowRHIHelper.cpp:295`); measured,
+  a page repainting every frame cost the game 1 ms (22.5 to 23.5 ms). The lag
+  was the data: `useHudState` sent a lab's state every 200 ms, and the lab
+  sliders showed the value the game sent back, so a dragged slider moved five
+  times a second. Now `useHudState` sends each frame the state changed (else
+  every 500 ms, inside `useGameState`'s 1 s staleness), and `ControlSlider`
+  shows the dragged value until the game's value follows.
+- **The HUD presented at 15 frames a second.** Even so the user saw every part
+  of the HUD (a dragged slider, hover, the card following the object, the
+  numbers) at about 15 frames. The engine runs CEF on an external message pump
+  driven from the game thread and forces that pump at most
+  `[Browser] MaxForcedMessageLoopHertz` times a second, default 15, clamped to
+  60 (`WebBrowserSingleton.cpp:880-935`); input to the page and the page's
+  frames to the screen both wait for a pump. `unreal/Config/DefaultEngine.ini`
+  sets it to 60. A game message answered by the page took 14-26 ms (median 17)
+  round trip (`vge:hud-echo` in `src/ui/bridge.ts`), which a reply pumps on its
+  own and so did not show the limit.
+- **Preview and write.** Dragging a control previews through the renderer's
+  DevTools `overrideProps` at the prop's path (`overridePath`); releasing it
+  writes the literal at that path through the dev server (`commit` with a
+  `path`): a number, a boolean, a string, an array or an object, inside nested
+  object literals and inside a `const` of the same file; a missing attribute is
+  added at the call site, a missing key is added to its object. Escape, or a
+  refused write, puts the value back. Undo and redo are the same as for the
+  gizmo.
+- **Where it lives.** `src/shared/react/editable.ts` (`defineEditable`),
+  `src/app/edit/propCard.ts` (rows), `src/app/edit/propCardSession.ts` (sends
+  `edit/card` to the HUD, takes `edit/prop` and `edit/level` back),
+  `src/ui/hud/EditPropCard.tsx` (the card), the kit's `ControlNumber` and
+  `ControlText` (new) and `ControlSlider` (its `onCommit`, new),
+  `vge/edit/propSource.mjs` (reading and writing literals at a path).
 
 ### Selection outline
 
@@ -842,7 +954,7 @@ volume blended `MID_Outline` of
 
 ### Where it lives
 
-- Pause: `src/shared/engine/pause.ts` (`pauseWorldKeepingCamera`, `resumeWorld`,
+- Edit mode and pause: `src/app/edit/editPause.ts` (`setEditPaused`), `src/shared/engine/gameInput.ts` (`holdGameInput`, `isGameInputHeld`: `Player`, `wantMouseCapture` and a lab's `OrbitCamera` read no input while it is held). Pause: `src/shared/engine/pause.ts` (`pauseWorldKeepingCamera`, `resumeWorld`,
   `isWorldPaused`). The frame dispatch in `src/shared/engine/world.ts`
   (`onFrame`, `everyFrame`) and `useFrame` in `src/shared/react/hooks.ts` skip
   callbacks while the game is paused unless they pass `tickEvenWhenPaused`.

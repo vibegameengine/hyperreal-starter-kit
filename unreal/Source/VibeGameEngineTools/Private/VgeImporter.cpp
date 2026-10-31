@@ -1,4 +1,6 @@
 #include "VgeImporter.h"
+#include "VgeRetargeter.h"
+#include "Animation/AnimSequence.h"
 
 #include "AssetImportTask.h"
 #include "AssetRegistry/AssetRegistryModule.h"
@@ -158,7 +160,7 @@ TSharedRef<FJsonObject> VgeImporter::ImportSound(const FString& Source, const FS
 	return SaveAndReport(RunImportTask(Source, Dest, nullptr), Source, Dest);
 }
 
-TSharedRef<FJsonObject> VgeImporter::ImportAnimations(const FString& Source, const FString& Dest, const FString& SkeletonPath)
+TSharedRef<FJsonObject> VgeImporter::ImportAnimations(const FString& Source, const FString& Dest, const FString& SkeletonPath, const TSharedPtr<FJsonObject>& Request)
 {
 	USkeleton* Skeleton = LoadObject<USkeleton>(nullptr, *SkeletonPath);
 	if (!Skeleton)
@@ -177,6 +179,16 @@ TSharedRef<FJsonObject> VgeImporter::ImportAnimations(const FString& Source, con
 	Pipeline->AddToRoot();
 	const TArray<UObject*> Imported = RunImportTask(Source, Dest, Override);
 	Pipeline->RemoveFromRoot();
+	if (Request->HasField(TEXT("finish")))
+	{
+		for (UObject* Object : Imported)
+		{
+			if (UAnimSequence* Sequence = Cast<UAnimSequence>(Object))
+			{
+				VgeRetargeter::FinishSequence(Sequence, Request, false);
+			}
+		}
+	}
 	return SaveAndReport(Imported, Source, Dest);
 }
 
@@ -311,18 +323,25 @@ TSharedRef<FJsonObject> FinishImport(const TArray<UObject*>& Imported, const FSt
 
 int32 VgeImporter::DeleteContentPath(const FString& ContentPath)
 {
-	IAssetRegistry& AssetRegistry = FAssetRegistryModule::GetRegistry();
-	TArray<FAssetData> Assets;
-	AssetRegistry.GetAssetsByPath(FName(*ContentPath), Assets, /*bRecursive*/ true);
+	return DeleteContentPaths({ ContentPath });
+}
 
+int32 VgeImporter::DeleteContentPaths(const TArray<FString>& ContentPaths)
+{
+	IAssetRegistry& AssetRegistry = FAssetRegistryModule::GetRegistry();
 	TArray<UObject*> Loaded;
 	TSet<FName> PackageNames;
-	for (const FAssetData& Asset : Assets)
+	for (const FString& ContentPath : ContentPaths)
 	{
-		PackageNames.Add(Asset.PackageName);
-		if (UObject* Object = Asset.GetAsset())
+		TArray<FAssetData> Assets;
+		AssetRegistry.GetAssetsByPath(FName(*ContentPath), Assets, /*bRecursive*/ true);
+		for (const FAssetData& Asset : Assets)
 		{
-			Loaded.Add(Object);
+			PackageNames.Add(Asset.PackageName);
+			if (UObject* Object = Asset.FastGetAsset(false))
+			{
+				Loaded.Add(Object);
+			}
 		}
 	}
 	if (Loaded.Num() > 0)
@@ -330,13 +349,20 @@ int32 VgeImporter::DeleteContentPath(const FString& ContentPath)
 		ObjectTools::ForceDeleteObjects(Loaded, /*ShowConfirmation*/ false);
 	}
 
-	// ForceDeleteObjects removes what it loaded; anything left on disk under the path goes too.
-	FString Directory;
-	if (FPackageName::TryConvertLongPackageNameToFilename(ContentPath / TEXT(""), Directory))
+	TArray<FString> Scanned;
+	for (const FString& ContentPath : ContentPaths)
 	{
-		IFileManager::Get().DeleteDirectory(*Directory, /*RequireExists*/ false, /*Tree*/ true);
-		AssetRegistry.ScanPathsSynchronous({ ContentPath }, /*bForceRescan*/ true);
+		FString Directory;
+		if (FPackageName::TryConvertLongPackageNameToFilename(ContentPath / TEXT(""), Directory))
+		{
+			IFileManager::Get().DeleteDirectory(*Directory, /*RequireExists*/ false, /*Tree*/ true);
+			Scanned.Add(ContentPath);
+		}
 	}
-	UE_LOGF(LogVgeImport, Display, "Deleted %d packages under %ls", PackageNames.Num(), *ContentPath);
+	if (!Scanned.IsEmpty())
+	{
+		AssetRegistry.ScanPathsSynchronous(Scanned, /*bForceRescan*/ true);
+	}
+	UE_LOGF(LogVgeImport, Display, "Deleted %d packages under %d paths", PackageNames.Num(), ContentPaths.Num());
 	return PackageNames.Num();
 }

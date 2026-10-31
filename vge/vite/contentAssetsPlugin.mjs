@@ -40,8 +40,7 @@ export function contentAssetsPlugin({ root, onImport, onChange }) {
         const model = settingsOf(file).find((candidate) => existsSync(candidate));
         if (model) onChange?.(model);
         return [];
-      }
-      if (!MODEL.test(file) || modules.length === 0) return;
+      }      if (!MODEL.test(file) || modules.length === 0) return;
       onChange?.(file);
       return [];
     },

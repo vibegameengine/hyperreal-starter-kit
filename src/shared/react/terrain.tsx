@@ -1,5 +1,5 @@
 import * as UE from 'ue';
-import { useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { onTerrain } from '../engine/content';
 import { onFrame, world } from '../engine/world';
 import type { TerrainRef } from '../terrain';
@@ -15,8 +15,22 @@ function unload(level: UE.LevelStreamingDynamic | null) {
   if (level) level.SetIsRequestingUnloadAndRemoval(true);
 }
 
+function afterUnloaded(level: UE.LevelStreamingDynamic | null, then: () => void) {
+  if (!level) {
+    then();
+    return () => {};
+  }
+  const stop = onFrame(() => {
+    if (level.GetLoadedLevel()) return;
+    stop();
+    UE.VgeScriptLibrary.RefreshWaterZones(world);
+    then();
+  });
+  return stop;
+}
+
 export function Terrain({ terrain, at = [0, 0, 0], children }: TerrainProps) {
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState<string | null>(null);
 
   useEffect(() => {
     let level: UE.LevelStreamingDynamic | null = null;
@@ -35,9 +49,10 @@ export function Terrain({ terrain, at = [0, 0, 0], children }: TerrainProps) {
         if (!next.IsLevelVisible()) return;
         stopWatching();
         unload(level);
+        const previous = level;
         level = next;
         loading = null;
-        setReady(true);
+        stopWatching = afterUnloaded(previous, () => setReady(`${built.path}#${built.build}`));
       });
     });
     return () => {
@@ -48,5 +63,9 @@ export function Terrain({ terrain, at = [0, 0, 0], children }: TerrainProps) {
     };
   }, [terrain.key, at[0], at[1], at[2]]);
 
-  return ready ? <>{children}</> : null;
+  return ready ? <TerrainLevelContext.Provider value={ready}>{children}</TerrainLevelContext.Provider> : null;
 }
+
+const TerrainLevelContext = createContext<string | null>(null);
+
+export const useTerrainLevel = () => useContext(TerrainLevelContext);

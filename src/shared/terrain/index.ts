@@ -22,6 +22,26 @@ export interface TerrainGrass {
   readonly scale?: readonly [number, number];
 }
 
+export interface WaterPoint {
+  readonly at: readonly [number, number, number];
+  readonly width?: number;
+  readonly depth?: number;
+  readonly velocity?: number;
+}
+
+export interface WaterBody {
+  readonly type: 'lake' | 'river';
+  readonly points: readonly WaterPoint[];
+  readonly waves?: boolean;
+  readonly waveFields?: Record<string, unknown>;
+  readonly fields?: Record<string, unknown>;
+}
+
+export interface TerrainWater {
+  readonly zone?: { readonly extent?: readonly [number, number]; readonly fields?: Record<string, unknown> };
+  readonly bodies: readonly WaterBody[];
+}
+
 export interface TerrainDescription {
   readonly components: number;
   readonly sectionsPerComponent?: 1 | 2;
@@ -32,6 +52,7 @@ export interface TerrainDescription {
   readonly runtimeMaterialParameters?: boolean;
   readonly layers?: readonly TerrainLayer[];
   readonly grass?: readonly TerrainGrass[];
+  readonly water?: TerrainWater;
 }
 
 export interface TerrainDefinition {

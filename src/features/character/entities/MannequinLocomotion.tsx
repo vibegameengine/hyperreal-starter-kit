@@ -38,11 +38,18 @@ export interface MannequinLocomotionProps {
   graph: Ref<UE.VgeAnimInstance>;
   clips?: LocomotionClips;
   ground?: ReactNode;
+  finish?: (pose: ReactNode) => ReactNode;
 }
 
-export function MannequinLocomotion({ graph, clips = MANNY_LOCOMOTION, ground }: MannequinLocomotionProps) {
+const asIs = (pose: ReactNode) => pose;
+
+export function MannequinLocomotion({ graph, clips = MANNY_LOCOMOTION, ground, finish = asIs }: MannequinLocomotionProps) {
+  return <animGraph ref={graph}>{finish(<Locomotion clips={clips} ground={ground} />)}</animGraph>;
+}
+
+function Locomotion({ clips, ground }: { clips: LocomotionClips; ground?: ReactNode }) {
   return (
-    <animGraph ref={graph}>
+    <>
       <inertialize>
         <slot name="DefaultSlot">
           <stateMachine entry="locomotion">
@@ -65,6 +72,6 @@ export function MannequinLocomotion({ graph, clips = MANNY_LOCOMOTION, ground }:
           </stateMachine>
         </slot>
       </inertialize>
-    </animGraph>
+    </>
   );
 }

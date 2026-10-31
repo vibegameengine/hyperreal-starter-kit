@@ -1,6 +1,7 @@
 import * as UE from 'ue';
 import { $ref, $unref } from 'puerts';
 import { useEffect, useRef } from 'react';
+import { isGameInputHeld } from '../../shared/engine/gameInput';
 import { releaseMouse } from '../../shared/engine/mouse';
 import { viewFrom, world } from '../../shared/engine/world';
 import { useFrame } from '../../shared/react';
@@ -87,7 +88,7 @@ export function OrbitCamera({ location, rotation, focus, editing = false, naviga
   useFrame((deltaSeconds) => {
     const actor = camera.current;
     const controller = UE.GameplayStatics.GetPlayerController(world, 0);
-    if (!actor || !controller) return;
+    if (!actor || !controller || (!editing && isGameInputHeld())) return;
     const view = orbit.current;
     const down = (key: UE.Key) => controller.IsInputKeyDown(key);
     const alt = down(KEYS.leftAlt) || down(KEYS.rightAlt);

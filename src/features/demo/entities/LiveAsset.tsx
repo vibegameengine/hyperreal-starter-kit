@@ -20,5 +20,5 @@ export function LiveAsset({ asset, at, turnDegreesPerSecond = 20 }: LiveAssetPro
     yaw.current = (yaw.current + turnDegreesPerSecond * deltaSeconds) % 360;
     actor.current?.K2_SetActorRotation(new UE.Rotator(0, yaw.current, 0), false);
   });
-  return <staticMeshActor ref={actor} location={at} staticMeshComponent={{ mobility: UE.EComponentMobility.Movable, staticMesh: mesh ?? PLACEHOLDER }} scale={0.91} rotation={[0, 18.59, 0.28]} />;
+  return <staticMeshActor ref={actor} location={at} staticMeshComponent={{ mobility: UE.EComponentMobility.Movable, staticMesh: mesh ?? PLACEHOLDER }} scale={0.91} rotation={[0, 44.39, 0]} />;
 }

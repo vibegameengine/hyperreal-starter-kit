@@ -4,6 +4,8 @@ import type { NiagaraSystemRef } from '../niagara';
 import type { MotionMatchingRef } from '../motion';
 import type { ComputeRef } from '../compute';
 import type { TerrainRef } from '../terrain';
+import type { PcgGraphRef } from '../pcg';
+import type { GeometryCollectionRef } from '../fracture';
 import { gameInstance, own } from './world';
 
 export interface ContentObject {
@@ -48,7 +50,6 @@ interface ContentContainer {
   pak: string;
   shaderLibrary: string;
   build: number;
-  folders?: string[];
 }
 interface Manifest {
   plugin: string;
@@ -60,11 +61,19 @@ interface Manifest {
   terrain?: Record<string, ContentTerrain>;
   motion?: Record<string, ContentTerrain>;
   compute?: Record<string, ContentTerrain>;
+  pcg?: Record<string, ContentTerrain>;
+  fracture?: Record<string, ContentTerrain>;
   packs: Record<string, ContentPack>;
+}
+export interface ContentClip {
+  path: string;
+  length: number;
+  rootSpeed: number;
 }
 export interface ContentTerrain {
   path: string;
   build: number;
+  clips?: ContentClip[];
 }
 type TerrainListener = (terrain: ContentTerrain) => void;
 type AssetListener = (asset: ContentAsset) => void;
@@ -74,7 +83,6 @@ type NiagaraListener = (system: ContentNiagara) => void;
 
 interface LiveContent {
   mounted: Set<string>;
-  packages?: Map<string, string[]>;
   manifest: Manifest | null;
   listeners: Map<string, Set<AssetListener>>;
   packListeners?: Map<string, Set<PackListener>>;
@@ -83,6 +91,9 @@ interface LiveContent {
   terrainListeners?: Map<string, Set<TerrainListener>>;
   motionListeners?: Map<string, Set<TerrainListener>>;
   computeListeners?: Map<string, Set<TerrainListener>>;
+  pcgListeners?: Map<string, Set<TerrainListener>>;
+  fractureListeners?: Map<string, Set<TerrainListener>>;
+  previews?: Map<string, { importing: UE.VgeAssetPreview; objects: Map<string, UE.Object>; listed: ContentObject[] }>;
 }
 declare const __vge: { content?: LiveContent };
 
@@ -93,7 +104,49 @@ const niagaraListeners = (live.niagaraListeners ??= new Map());
 const terrainListeners = (live.terrainListeners ??= new Map());
 const motionListeners = (live.motionListeners ??= new Map());
 const computeListeners = (live.computeListeners ??= new Map());
-const packagesOf = (live.packages ??= new Map<string, string[]>());
+const pcgListeners = (live.pcgListeners ??= new Map());
+const fractureListeners = (live.fractureListeners ??= new Map());
+const previews = (live.previews ??= new Map());
+const PREVIEW_TIMEOUT_MS = 30000;
+const PREVIEW_POLL_MS = 30;
+const KIT_MASTERS: [string, string][] = [
+  ['/InterchangeAssets/gltf/', '/Game/Vge/Materials/Gltf/'],
+  ['/InterchangeAssets/Materials/', '/Game/Vge/Materials/Interchange/'],
+];
+
+function masterOf(material: UE.MaterialInterface): UE.MaterialInterface {
+  let current = material;
+  while (current instanceof UE.MaterialInstance && current.Parent) current = current.Parent;
+  return current;
+}
+
+function onKitMaster(material: UE.MaterialInstanceDynamic) {
+  const source = UE.KismetSystemLibrary.GetPathName(masterOf(material));
+  const set = KIT_MASTERS.find(([from]) => source.startsWith(from));
+  if (!set) return material;
+  const name = source.slice(set[0].length).split('.')[0];
+  const master = UE.Object.Load(`${set[1]}${name}.${name}`) as UE.MaterialInterface | undefined;
+  if (!master) return material;
+  const instance = UE.KismetMaterialLibrary.CreateDynamicMaterialInstance(gameInstance, master, '', UE.EMIDCreationFlags.None);
+  instance.K2_CopyMaterialInstanceParameters(material, false);
+  return instance;
+}
+
+function useKitMasters(objects: UE.Object[]) {
+  const replaced = new Map<UE.Object, UE.MaterialInterface>();
+  for (const object of objects) if (object instanceof UE.MaterialInstanceDynamic) replaced.set(object, onKitMaster(object));
+  for (const object of objects) {
+    if (!(object instanceof UE.StaticMesh)) continue;
+    const slots = object.StaticMaterials;
+    for (let index = 0; index < slots.Num(); index++) {
+      const slot = slots.Get(index);
+      const kit = replaced.get(slot.MaterialInterface);
+      if (!kit) continue;
+      slot.MaterialInterface = kit;
+      slots.Set(index, slot);
+    }
+  }
+}
 
 export function contentAsset(key: string, objects?: ContentObject[]): ContentAssetRef {
   return { key, objects };
@@ -112,6 +165,10 @@ function describe(build: number, objects: ContentObject[]): ContentAsset {
 }
 
 export function loadContent<T extends UE.Object>(path: string): T | undefined {
+  for (const preview of previews.values()) {
+    const object = preview.objects.get(path);
+    if (object) return object as T;
+  }
   const object = UE.Object.Load(path) as T | undefined;
   if (!object) console.error(`[content] ${path} is not loadable from build ${live.manifest?.build ?? 'release'}`);
   return object;
@@ -124,66 +181,6 @@ function notify(key: string, asset: ContentAsset, listeners: Iterable<AssetListe
     } catch (err: any) {
       console.error(`[content] ${key} listener failed: ${err?.stack ?? err}`);
     }
-  }
-}
-
-const UNMOUNT_AFTER_MS = 5000;
-const UNMOUNT_RETRY_MS = 5000;
-const unmounting = new Set<string>();
-
-function currentPaks(manifest: Manifest | null) {
-  return new Set([...(manifest?.containers ?? []).map((container) => container.pak), ...Object.values(manifest?.packs ?? {}).map((pack) => pack.pak)]);
-}
-
-const packageOf = (objectPath: string) => objectPath.split('.')[0];
-
-function manifestPackages(manifest: Manifest) {
-  const paths = [
-    ...Object.values(manifest.assets).flatMap((asset) => asset.objects.map((object) => object.path)),
-    ...[manifest.materials, manifest.niagara, manifest.terrain, manifest.motion, manifest.compute].flatMap((table) => Object.values(table ?? {}).map((record) => record.path)),
-  ];
-  return [...new Set(paths.map(packageOf))];
-}
-
-function rememberPackages(manifest: Manifest) {
-  const names = manifestPackages(manifest);
-  for (const container of manifest.containers ?? []) {
-    const roots = container.folders ?? [];
-    if (!roots.length) continue;
-    const known = new Set(packagesOf.get(container.pak) ?? []);
-    for (const name of names) if (roots.some((root) => name.startsWith(root))) known.add(name);
-    packagesOf.set(container.pak, [...known]);
-  }
-}
-
-function loadedPackagesOf(pak: string) {
-  return (packagesOf.get(pak) ?? []).filter((name) => UE.Package.Find(name)).length;
-}
-
-function unmountWhenUnused(pak: string, waited: boolean) {
-  if (currentPaks(live.manifest).has(pak)) {
-    unmounting.delete(pak);
-    return;
-  }
-  const loaded = loadedPackagesOf(pak);
-  if (loaded > 0) {
-    if (!waited) console.log(`[content] keeping ${pak} mounted: ${loaded} of its packages are still loaded`);
-    UE.KismetSystemLibrary.CollectGarbage();
-    setTimeout(() => unmountWhenUnused(pak, true), UNMOUNT_RETRY_MS);
-    return;
-  }
-  unmounting.delete(pak);
-  gameInstance.UnmountContent(pak);
-  live.mounted.delete(pak);
-  packagesOf.delete(pak);
-}
-
-function unmountSuperseded(manifest: Manifest) {
-  const current = currentPaks(manifest);
-  const superseded = [...live.mounted].filter((pak) => !current.has(pak) && !unmounting.has(pak));
-  for (const pak of superseded) {
-    unmounting.add(pak);
-    setTimeout(() => unmountWhenUnused(pak, false), UNMOUNT_AFTER_MS);
   }
 }
 
@@ -205,7 +202,6 @@ function apply(manifest: Manifest | null) {
       }
       live.mounted.add(container.pak);
     }
-    rememberPackages(manifest);
     const previous = live.manifest;
     for (const pack of Object.values(manifest.packs ?? {})) {
       if (live.mounted.has(pack.pak)) continue;
@@ -218,7 +214,9 @@ function apply(manifest: Manifest | null) {
     live.manifest = manifest;
     for (const [key, listeners] of live.listeners) {
       const entry = manifest.assets[key];
-      if (entry && previous?.assets[key]?.build !== entry.build) notify(key, describe(entry.build, entry.objects), listeners);
+      if (!entry || previous?.assets[key]?.build === entry.build) continue;
+      previews.delete(key);
+      notify(key, describe(entry.build, entry.objects), listeners);
     }
     for (const [name, listeners] of packListeners) {
       const pack = manifest.packs?.[name];
@@ -235,11 +233,39 @@ function apply(manifest: Manifest | null) {
     notifyBuilt(terrainListeners, manifest.terrain, previous?.terrain);
     notifyBuilt(motionListeners, manifest.motion, previous?.motion);
     notifyBuilt(computeListeners, manifest.compute, previous?.compute);
+    notifyBuilt(pcgListeners, manifest.pcg, previous?.pcg);
+    notifyBuilt(fractureListeners, manifest.fracture, previous?.fracture);
     console.log(`[content] build ${manifest.build} mounted, assets: ${Object.keys(manifest.assets).join(', ')}; packs: ${Object.keys(manifest.packs ?? {}).join(', ')}`);
-    unmountSuperseded(manifest);
   } catch (err: any) {
     console.error(`[content] applying build ${manifest?.build} failed: ${err?.stack ?? err}`);
   }
+}
+
+function preview({ key, file }: { key: string; file: string }) {
+  const building = live.manifest?.assets[key]?.build;
+  const importing = UE.VgeAssetPreview.Import(file, `/Game/VgePreview/${assetName({ key })}_${Date.now()}`);
+  const started = Date.now();
+  const poll = () => {
+    if (live.manifest?.assets[key]?.build !== building) return;
+    if (!importing.IsDone()) {
+      if (Date.now() - started < PREVIEW_TIMEOUT_MS) setTimeout(poll, PREVIEW_POLL_MS);
+      return;
+    }
+    const found = importing.Objects();
+    const objects = new Map<string, UE.Object>();
+    const listed: ContentObject[] = [];
+    for (let index = 0; index < found.Num(); index++) {
+      const object = found.Get(index);
+      const path = UE.KismetSystemLibrary.GetPathName(object);
+      objects.set(path, object);
+      listed.push({ path, class: object.GetClass().GetName() });
+    }
+    useKitMasters([...objects.values()]);
+    previews.set(key, { importing, objects, listed });
+    console.log(`[content] ${key} previewed from its file in ${Date.now() - started} ms`);
+    notify(key, describe(-1, listed), live.listeners.get(key) ?? []);
+  };
+  poll();
 }
 
 export function onAsset(ref: ContentAssetRef, listener: AssetListener) {
@@ -250,7 +276,9 @@ export function onAsset(ref: ContentAssetRef, listener: AssetListener) {
   if (!live.listeners.has(ref.key)) live.listeners.set(ref.key, new Set());
   live.listeners.get(ref.key)!.add(listener);
   const entry = live.manifest?.assets[ref.key];
-  if (entry) notify(ref.key, describe(entry.build, entry.objects), [listener]);
+  const previewed = previews.get(ref.key);
+  if (previewed) notify(ref.key, describe(-1, previewed.listed), [listener]);
+  else if (entry) notify(ref.key, describe(entry.build, entry.objects), [listener]);
   return own(() => live.listeners.get(ref.key)?.delete(listener));
 }
 
@@ -371,6 +399,22 @@ export function onCompute(ref: ComputeRef, listener: TerrainListener) {
   return own(() => computeListeners.get(ref.key)?.delete(listener));
 }
 
+export function pcgAsset(ref: PcgGraphRef): PcgGraphRef {
+  return ref;
+}
+
+export function onPcg(ref: PcgGraphRef, listener: TerrainListener) {
+  const now = ref.path ? { path: ref.path, build: 0 } : live.manifest?.pcg?.[ref.key];
+  if (ref.path) {
+    if (now) notifyTerrain(ref.key, now, [listener]);
+    return own(() => {});
+  }
+  if (!pcgListeners.has(ref.key)) pcgListeners.set(ref.key, new Set());
+  pcgListeners.get(ref.key)!.add(listener);
+  if (now) notifyTerrain(ref.key, now, [listener]);
+  return own(() => pcgListeners.get(ref.key)?.delete(listener));
+}
+
 export function niagaraAsset(ref: NiagaraSystemRef): NiagaraSystemRef {
   return ref;
 }
@@ -401,6 +445,23 @@ export function onMesh(ref: ContentAssetRef, listener: (mesh: UE.StaticMesh) => 
 
 if (import.meta.hot) {
   import.meta.hot.on('vge:content', apply);
+  import.meta.hot.on('vge:content-preview', preview);
   import.meta.hot.on('vge:content-error', (e: { file: string; message: string }) => console.error(`[content] ${e.file}: ${e.message}`));
   import.meta.hot.send('vge:content-sync');
+}
+
+export function geometryCollectionAsset(ref: GeometryCollectionRef): GeometryCollectionRef {
+  return ref;
+}
+
+export function onGeometryCollection(ref: GeometryCollectionRef, listener: TerrainListener) {
+  const now = ref.path ? { path: ref.path, build: 0 } : live.manifest?.fracture?.[ref.key];
+  if (ref.path) {
+    if (now) notifyTerrain(ref.key, now, [listener]);
+    return own(() => {});
+  }
+  if (!fractureListeners.has(ref.key)) fractureListeners.set(ref.key, new Set());
+  fractureListeners.get(ref.key)!.add(listener);
+  if (now) notifyTerrain(ref.key, now, [listener]);
+  return own(() => fractureListeners.get(ref.key)?.delete(listener));
 }

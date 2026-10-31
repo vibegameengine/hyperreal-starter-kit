@@ -1,4 +1,5 @@
 #include "VgeTerrain.h"
+#include "VgeWater.h"
 
 #include "Engine/World.h"
 #include "FileHelpers.h"
@@ -204,6 +205,16 @@ TSharedRef<FJsonObject> VgeTerrain::Build(const TSharedPtr<FJsonObject>& Request
 	UPackage* Package = CreatePackage(*AssetPath);
 	UWorld* World = UWorld::CreateWorld(EWorldType::Editor, false, FName(*AssetName), Package);
 	World->SetFlags(RF_Public | RF_Standalone);
+
+	const TSharedPtr<FJsonObject>* Water = nullptr;
+	FString WaterError;
+	if (Request->TryGetObjectField(TEXT("water"), Water) && !VgeWater::Spawn(World, *Water, WaterError))
+	{
+		World->DestroyWorld(false);
+		World->RemoveFromRoot();
+		Result->SetStringField(TEXT("error"), TEXT("water: ") + WaterError);
+		return Result;
+	}
 
 	FActorSpawnParameters Spawn;
 	Spawn.Name = TEXT("Terrain");

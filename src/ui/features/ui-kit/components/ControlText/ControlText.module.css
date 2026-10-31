@@ -1,0 +1,41 @@
+.field {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid rgb(161 221 255 / 22%);
+  border-radius: 4px;
+  background: rgb(120 199 239 / 7%);
+}
+
+.field:focus-within {
+  border-color: rgb(161 221 255 / 60%);
+}
+
+.label {
+  flex: 0 0 auto;
+  color: rgb(224 245 255 / 72%);
+  font: 800 9px/1 'Trebuchet MS', system-ui, sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgb(238 250 255 / 88%);
+  font: 700 10px/1 'Trebuchet MS', system-ui, sans-serif;
+  outline: none;
+  text-align: right;
+}
+
+.input:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}

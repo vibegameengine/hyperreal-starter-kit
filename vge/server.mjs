@@ -22,6 +22,8 @@ import { createNiagaraModules, NIAGARA_MODULE, niagaraHandleModule } from './con
 import { createTerrainModules, TERRAIN_MODULE, terrainHandleModule } from './content/terrain.mjs';
 import { createMotionModules, MOTION_MODULE, motionHandleModule } from './content/motion.mjs';
 import { COMPUTE_MODULE, computeHandleModule, createComputeModules } from './content/compute.mjs';
+import { createPcgModules, PCG_MODULE, pcgHandleModule } from './content/pcg.mjs';
+import { createFractureModules, FRACTURE_MODULE, fractureHandleModule } from './content/fracture.mjs';
 import { contentAssetsPlugin } from './vite/contentAssetsPlugin.mjs';
 import { devLeanTransportPlugin } from './vite/devLeanTransportPlugin.ts';
 import { materialsEnvironment, uiKitClientPlugins, unrealOptimizeDeps, unrealResolve } from './vite/environments.mjs';
@@ -179,7 +181,7 @@ function contentPlugins() {
           return pipeline.isStale(spec) || built[e.exportKey]?.modelBuilds?.[spec.key] !== models[spec.key]?.build;
         });
       return exports.some((e) => {
-        const path = pipeline.versionByModels(e).path;
+        const path = pipeline.versionOf(e).path;
         return built[e.exportKey]?.path !== path || !assets[path] || e.materials.some((m) => !materialAssets[m.path]) || staleModel(e);
       });
     };
@@ -199,17 +201,37 @@ function contentPlugins() {
   const describeMotion = describedModules({ modules: motion, handleModuleOf: motionHandleModule, enqueue: pipeline.enqueueMotion, currentState: pipeline.motionState, table: 'motion', noun: 'motion matching graphs', modelsOf: (entry) => entry.request.models ?? [] });
   const compute = createComputeModules({ materials, folderRoot: '/VgeLive/Compute' });
   const describeCompute = describedModules({ modules: compute, handleModuleOf: computeHandleModule, enqueue: pipeline.enqueueCompute, currentState: pipeline.computeState, table: 'compute', noun: 'compute graphs' });
+  const pcg = createPcgModules({ materials, folderRoot: '/VgeLive/Pcg' });
+  const describePcg = describedModules({ modules: pcg, handleModuleOf: pcgHandleModule, enqueue: pipeline.enqueuePcg, currentState: pipeline.pcgState, table: 'pcg', noun: 'PCG graphs', modelsOf: (entry) => entry.request.models });
+  const fracture = createFractureModules({ materials, folderRoot: '/VgeLive/Fracture' });
+  const describeFracture = describedModules({ modules: fracture, handleModuleOf: fractureHandleModule, enqueue: pipeline.enqueueFracture, currentState: pipeline.fractureState, table: 'fracture', noun: 'geometry collections', modelsOf: (entry) => entry.request.models });
   // An edit of a material or Niagara module, or of anything it imports: its assets are described again, built when
   // they changed, and the game reloads its handle module only when the exports themselves changed.
+  const builtTables = () => [[describeMotion, pipeline.motionState, 'motion'], [describeTerrain, pipeline.terrainState, 'terrain'], [describeNiagara, pipeline.niagaraState, 'niagara'], [describePcg, pipeline.pcgState, 'pcg'], [describeFracture, pipeline.fractureState, 'fracture']];
+  const modulesBuiltOn = (file) => {
+    const target = resolve(file);
+    const found = new Map();
+    for (const [describe, current, table] of builtTables()) {
+      for (const [exportKey, entry] of Object.entries(current()[table] ?? {})) {
+        if (!(entry.models ?? []).some((model) => resolve(process.cwd(), model.split('?')[0]) === target)) continue;
+        const moduleFile = resolve(process.cwd(), exportKey.split('#')[0]).replaceAll('\\', '/');
+        found.set(moduleFile, { moduleFile, describe });
+      }
+    }
+    return [...found.values()];
+  };
   const onFileChange = async (file) => {
     if (isHalfWritten(file)) return;
-    const affected = [
+    const graphed = [
       ...materials.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describeMaterials })),
       ...niagara.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describeNiagara })),
       ...terrain.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describeTerrain })),
       ...motion.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describeMotion })),
       ...compute.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describeCompute })),
+      ...pcg.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describePcg })),
+      ...fracture.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describeFracture })),
     ];
+    const affected = [...graphed, ...modulesBuiltOn(file).filter((built) => !graphed.some((entry) => entry.moduleFile === built.moduleFile))];
     if (!affected.length) return;
     materials.invalidate(file);
     for (const { moduleFile, describe } of affected) {
@@ -228,6 +250,7 @@ function contentPlugins() {
   };
   const build = (spec) => {
     console.log(`[content] building ${spec.key}`);
+    if (spec.kind === 'model' && /\.(glb|gltf)$/i.test(spec.file)) unreal().send('vge:content-preview', { key: spec.key, file: spec.file });
     pipeline.enqueue(spec, (err, result) => {
       if (err) {
         console.error(`[content] ${err.message}`);
@@ -243,11 +266,19 @@ function contentPlugins() {
       configureServer(viteServer) {
         server = viteServer;
         server.watcher.on('change', onFileChange);
+        server.watcher.on('add', onFileChange);
         unrealChannel.attach(server.httpServer);
         unreal = () => server.environments.unreal.hot;
         unreal().on('vge:content-sync', (_data, client) => client.send('vge:content', pipeline.manifest()));
         // The content service warms up with the dev server, so the first imported model does not wait for it.
         pipeline.startService();
+        for (const [describe, current, table] of builtTables()) {
+          const built = Object.entries(current()[table] ?? {});
+          const stale = built.filter(([, entry]) => (entry.models ?? []).some((model) => pipeline.isStale(specOfModelKey(process.cwd(), model))));
+          for (const key of new Set(stale.map(([exportKey]) => exportKey.split('#')[0]))) {
+            describe(resolve(process.cwd(), key), key).catch((err) => console.error(`[content] ${key}: ${err?.message ?? err}`));
+          }
+        }
         pipeline.restoreMissing((err, result) => {
           if (err) console.error(`[content] ${err.message}`);
           else unreal().send('vge:content', result.manifest);
@@ -297,6 +328,8 @@ function contentPlugins() {
     materialAssetsPlugin({ root: process.cwd(), onImport: describeTerrain, pattern: TERRAIN_MODULE, name: 'vge:terrain-assets' }),
     materialAssetsPlugin({ root: process.cwd(), onImport: describeMotion, pattern: MOTION_MODULE, name: 'vge:motion-assets' }),
     materialAssetsPlugin({ root: process.cwd(), onImport: describeCompute, pattern: COMPUTE_MODULE, name: 'vge:compute-assets' }),
+    materialAssetsPlugin({ root: process.cwd(), onImport: describePcg, pattern: PCG_MODULE, name: 'vge:pcg-assets' }),
+    materialAssetsPlugin({ root: process.cwd(), onImport: describeFracture, pattern: FRACTURE_MODULE, name: 'vge:fracture-assets' }),
   ];
 }
 

@@ -1,4 +1,5 @@
 import * as UE from 'ue';
+import { isGameInputHeld } from './gameInput';
 import { everyFrame, own, world, type Scope } from './world';
 
 const ESCAPE = new UE.Key('Escape');
@@ -28,7 +29,7 @@ export function releaseMouse() {
 export function wantMouseCapture(scope: Scope = 'scene') {
   const stopTicking = everyFrame(() => {
     const player = controller();
-    if (!player) return;
+    if (!player || isGameInputHeld()) return;
     if (player.bShowMouseCursor) {
       if (player.WasInputKeyJustPressed(CLICK)) captureMouse();
     } else if (player.WasInputKeyJustPressed(ESCAPE)) {

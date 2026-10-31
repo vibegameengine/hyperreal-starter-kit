@@ -1,9 +1,17 @@
 import * as UE from 'ue';
+import { $ref, $unref } from 'puerts';
 import { useMemo } from 'react';
 import { loadContent } from '../../../shared/engine/content';
+import { world } from '../../../shared/engine/world';
 import { useContentAsset, useFrame } from '../../../shared/react';
 import groundTextures from '../assets/scans/ground.glb';
-import { landscapes } from './landscapes';
+
+function landscapes() {
+  const found = $ref(UE.NewArray(UE.Actor));
+  UE.GameplayStatics.GetAllActorsOfClass(world, UE.LandscapeProxy.StaticClass(), found);
+  const list = $unref(found);
+  return Array.from({ length: list.Num() }, (_, i) => list.Get(i) as UE.LandscapeProxy);
+}
 
 export function useGroundTextures() {
   const asset = useContentAsset(groundTextures);

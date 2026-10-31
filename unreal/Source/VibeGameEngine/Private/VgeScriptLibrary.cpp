@@ -1,6 +1,9 @@
 #include "VgeScriptLibrary.h"
 
 #include "Components/ActorComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "EngineUtils.h"
+#include "WaterZoneActor.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "ClothingSystemRuntimeTypes.h"
@@ -13,33 +16,81 @@
 #include "Animation/AnimInstance.h"
 #include "PoseSearch/AnimNode_MotionMatching.h"
 #include "PoseSearch/MotionMatchingAnimNodeLibrary.h"
+#include "DynamicRHI.h"
+#include "JsonObjectConverter.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
+#include "RenderTimer.h"
+
+namespace
+{
+	bool FindMotionMatchingNode(UAnimInstance* Instance, FMotionMatchingAnimNodeReference& OutNode)
+	{
+		const IAnimClassInterface* AnimClass = Instance ? IAnimClassInterface::GetFromClass(Instance->GetClass()) : nullptr;
+		const TArray<FStructProperty*> Nodes = AnimClass ? AnimClass->GetAnimNodeProperties() : TArray<FStructProperty*>();
+		for (int32 Index = 0; Index < Nodes.Num(); ++Index)
+		{
+			if (Nodes[Index]->Struct->IsChildOf(FAnimNode_MotionMatching::StaticStruct()))
+			{
+				EAnimNodeReferenceConversionResult Converted;
+				OutNode = UMotionMatchingAnimNodeLibrary::ConvertToMotionMatchingNode(FAnimNodeReference(Instance, Index), Converted);
+				return Converted == EAnimNodeReferenceConversionResult::Succeeded;
+			}
+		}
+		return false;
+	}
+}
 
 FString UVgeScriptLibrary::DescribeMotionMatching(UAnimInstance* Instance)
 {
+	FMotionMatchingAnimNodeReference Node;
+	if (!FindMotionMatchingNode(Instance, Node))
+	{
+		return TEXT("no motion matching node");
+	}
+	FPoseSearchBlueprintResult Result;
+	bool bValid = false;
+	UMotionMatchingAnimNodeLibrary::GetMotionMatchingSearchResult(Node, Result, bValid);
+	if (!bValid)
+	{
+		return TEXT("invalid");
+	}
+	return FString::Printf(TEXT("%s|%.3f|%.3f|%d|%.3f"), Result.SelectedAnim ? *Result.SelectedAnim->GetName() : TEXT("none"), Result.SelectedTime, Result.SearchCost, Result.bIsContinuingPoseSearch ? 1 : 0, Result.WantedPlayRate);
+}
+
+bool UVgeScriptLibrary::SetMotionMatchingDatabase(UAnimInstance* Instance, UPoseSearchDatabase* Database, EPoseSearchInterruptMode InterruptMode)
+{
+	FMotionMatchingAnimNodeReference Node;
+	if (!Database || !FindMotionMatchingNode(Instance, Node))
+	{
+		return false;
+	}
+	UMotionMatchingAnimNodeLibrary::SetDatabaseToSearch(Node, Database, InterruptMode);
+	return true;
+}
+
+int32 UVgeScriptLibrary::SetAnimNodeFields(UAnimInstance* Instance, const FString& NodeStruct, const FString& FieldsJson)
+{
+	TSharedPtr<FJsonObject> Fields;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(FieldsJson);
 	const IAnimClassInterface* AnimClass = Instance ? IAnimClassInterface::GetFromClass(Instance->GetClass()) : nullptr;
-	if (!AnimClass)
+	if (!AnimClass || !FJsonSerializer::Deserialize(Reader, Fields) || !Fields.IsValid())
 	{
-		return FString();
+		return 0;
 	}
-	const TArray<FStructProperty*>& Nodes = AnimClass->GetAnimNodeProperties();
-	for (int32 Index = 0; Index < Nodes.Num(); ++Index)
+	int32 Written = 0;
+	for (const FStructProperty* Node : AnimClass->GetAnimNodeProperties())
 	{
-		if (!Nodes[Index]->Struct->IsChildOf(FAnimNode_MotionMatching::StaticStruct()))
+		for (const UStruct* Struct = Node->Struct; Struct; Struct = Struct->GetSuperStruct())
 		{
-			continue;
+			if (Struct->GetName() == NodeStruct)
+			{
+				Written += FJsonObjectConverter::JsonObjectToUStruct(Fields.ToSharedRef(), Node->Struct, Node->ContainerPtrToValuePtr<void>(Instance), 0, 0) ? 1 : 0;
+				break;
+			}
 		}
-		EAnimNodeReferenceConversionResult Converted;
-		const FMotionMatchingAnimNodeReference Node = UMotionMatchingAnimNodeLibrary::ConvertToMotionMatchingNode(FAnimNodeReference(Instance, Index), Converted);
-		FPoseSearchBlueprintResult Result;
-		bool bValid = false;
-		UMotionMatchingAnimNodeLibrary::GetMotionMatchingSearchResult(Node, Result, bValid);
-		if (!bValid)
-		{
-			return TEXT("invalid");
-		}
-		return FString::Printf(TEXT("%s|%.3f|%.3f|%d|%.3f"), Result.SelectedAnim ? *Result.SelectedAnim->GetName() : TEXT("none"), Result.SelectedTime, Result.SearchCost, Result.bIsContinuingPoseSearch ? 1 : 0, Result.WantedPlayRate);
 	}
-	return TEXT("no motion matching node");
+	return Written;
 }
 
 ULevelStreamingDynamic* UVgeScriptLibrary::LoadLevelInstance(UObject* WorldContext, const FString& PackageName, FVector Location)
@@ -130,6 +181,14 @@ void UVgeScriptLibrary::SetInstances(UInstancedStaticMeshComponent* Component, c
 	Component->MarkRenderStateDirty();
 }
 
+void UVgeScriptLibrary::ReregisterComponent(UActorComponent* Component)
+{
+	if (Component && Component->IsRegistered())
+	{
+		Component->ReregisterComponent();
+	}
+}
+
 UTexture2D* UVgeScriptLibrary::CreateFloatTexture(int32 Width, int32 Height, FArrayBuffer Pixels)
 {
 	const int64 Bytes = int64(Width) * Height * 4 * sizeof(float);
@@ -156,10 +215,38 @@ UTexture2D* UVgeScriptLibrary::CreateFloatTexture(int32 Width, int32 Height, FAr
 	return Texture;
 }
 
-void UVgeScriptLibrary::ReregisterComponent(UActorComponent* Component)
+FVgeFrameTimes UVgeScriptLibrary::FrameTimes()
 {
-	if (Component && Component->IsRegistered())
+	FVgeFrameTimes Times;
+	Times.GameMs = FPlatformTime::ToMilliseconds(GGameThreadTime);
+	Times.GpuMs = FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles());
+	return Times;
+}
+
+void UVgeScriptLibrary::RefreshWaterZones(UObject* WorldContext)
+{
+	UWorld* World = GEngine->GetWorldFromContextObject(WorldContext, EGetWorldErrorMode::LogAndReturnNull);
+	if (!World)
 	{
-		Component->ReregisterComponent();
+		return;
+	}
+	TArray<AWaterZone*> Zones;
+	for (TActorIterator<AWaterZone> It(World); It; ++It)
+	{
+		Zones.Add(*It);
+	}
+	for (AWaterZone* Zone : Zones)
+	{
+		if (Zone->GetWaterZoneIndex() >= Zones.Num())
+		{
+			Zone->UnregisterAllComponents();
+			TInlineComponentArray<UPrimitiveComponent*> Primitives(Zone);
+			for (UPrimitiveComponent* Primitive : Primitives)
+			{
+				Primitive->PrecachePSOs();
+			}
+			Zone->RegisterAllComponents();
+		}
+		Zone->MarkForRebuild(EWaterZoneRebuildFlags::All);
 	}
 }

@@ -13,6 +13,7 @@
 #include "VgeImporter.h"
 #include "VgeMaterialBuilder.h"
 #include "VgeNiagara.h"
+#include "VgeObjects.h"
 #include "VgeRetargeter.h"
 #include "VgeMotionMatching.h"
 #include "VgeTerrain.h"
@@ -62,7 +63,16 @@ namespace
 	{
 		const FString Command = Request->GetStringField(TEXT("cmd"));
 		TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
-		if (Command == TEXT("import"))
+		if (Command == TEXT("many"))
+		{
+			TArray<TSharedPtr<FJsonValue>> Results;
+			for (const TSharedPtr<FJsonValue>& Item : Request->GetArrayField(TEXT("requests")))
+			{
+				Results.Add(MakeShared<FJsonValueObject>(Handle(Item->AsObject())));
+			}
+			Result->SetArrayField(TEXT("results"), Results);
+		}
+		else if (Command == TEXT("import"))
 		{
 			const TSharedPtr<FJsonObject>* Cloth = nullptr;
 			Request->TryGetObjectField(TEXT("cloth"), Cloth);
@@ -107,7 +117,7 @@ namespace
 		}
 		else if (Command == TEXT("import-animations"))
 		{
-			Result = VgeImporter::ImportAnimations(Request->GetStringField(TEXT("source")), Request->GetStringField(TEXT("dest")), Request->GetStringField(TEXT("skeleton")));
+			Result = VgeImporter::ImportAnimations(Request->GetStringField(TEXT("source")), Request->GetStringField(TEXT("dest")), Request->GetStringField(TEXT("skeleton")), Request);
 			if (!Result->HasField(TEXT("error")) && !Result->GetBoolField(TEXT("saved")))
 			{
 				Result->SetStringField(TEXT("error"), TEXT("no animation was imported; see the service log"));
@@ -161,9 +171,26 @@ namespace
 		{
 			Result = VgeMotionMatching::Build(Request);
 		}
+		else if (Command == TEXT("set-properties"))
+		{
+			Result = VgeObjects::SetProperties(Request);
+		}
+		else if (Command == TEXT("save"))
+		{
+			Result = VgeObjects::Save(Request);
+		}
+		else if (Command == TEXT("call"))
+		{
+			Result = VgeObjects::Call(Request);
+		}
 		else if (Command == TEXT("delete"))
 		{
-			Result->SetNumberField(TEXT("deleted"), VgeImporter::DeleteContentPath(Request->GetStringField(TEXT("path"))));
+			TArray<FString> Paths;
+			if (!Request->TryGetStringArrayField(TEXT("paths"), Paths))
+			{
+				Paths.Add(Request->GetStringField(TEXT("path")));
+			}
+			Result->SetNumberField(TEXT("deleted"), VgeImporter::DeleteContentPaths(Paths));
 		}
 		else if (Command != TEXT("ping"))
 		{

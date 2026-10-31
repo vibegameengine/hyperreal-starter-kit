@@ -12,4 +12,6 @@ namespace VgeRetargeter
 	// skeleton) and/or animationFolder (every sequence under that content folder), dest (content folder for the
 	// retargeted copies). Report: the new animations, saved.
 	TSharedRef<FJsonObject> Retarget(const TSharedPtr<FJsonObject>& Request);
+
+	void FinishSequence(class UAnimSequence* Sequence, const TSharedPtr<FJsonObject>& Request, bool bRootFromPelvis);
 }

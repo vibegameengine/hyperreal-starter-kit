@@ -9,10 +9,13 @@
 #include "EdGraphSchema_K2.h"
 #include "Factories/AnimBlueprintFactory.h"
 #include "FileHelpers.h"
+#include "JsonObjectConverter.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Misc/PackageName.h"
 #include "PoseSearch/PoseSearchDatabase.h"
+#include "PoseSearch/PoseSearchNormalizationSet.h"
 #include "PoseSearch/PoseSearchSchema.h"
+#include "PoseSearch/PoseSearchFeatureChannel.h"
 #include "UObject/Package.h"
 
 namespace
@@ -84,6 +87,71 @@ namespace
 		return Root.GetTranslation().Size2D() / Length;
 	}
 
+	void SetNodeFields(UEdGraphNode* GraphNode, const TSharedPtr<FJsonObject>& Fields)
+	{
+		const FStructProperty* Property = CastField<FStructProperty>(GraphNode->GetClass()->FindPropertyByName(TEXT("Node")));
+		if (!Property || !Fields)
+		{
+			return;
+		}
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Fields->Values)
+		{
+			if (FProperty* Member = Property->Struct->FindPropertyByName(*Field.Key))
+			{
+				FJsonObjectConverter::JsonValueToUProperty(Field.Value, Member, Member->ContainerPtrToValuePtr<void>(NodeStruct(GraphNode)), 0, 0);
+			}
+		}
+	}
+
+	bool SetObjectFields(UObject* Object, const TSharedPtr<FJsonObject>& Request, const TCHAR* Field)
+	{
+		const TSharedPtr<FJsonObject>* Fields = nullptr;
+		return Request->TryGetObjectField(Field, Fields) && FJsonObjectConverter::JsonObjectToUStruct((*Fields).ToSharedRef(), Object->GetClass(), Object, 0, 0);
+	}
+
+	bool AddChannels(UPoseSearchSchema* Schema, const TSharedPtr<FJsonObject>& Request, TArray<UPoseSearchFeatureChannel*>& Created, TArray<FString>& Errors)
+	{
+		const TArray<TSharedPtr<FJsonValue>>* Channels = nullptr;
+		if (!Request->TryGetArrayField(TEXT("channels"), Channels))
+		{
+			return false;
+		}
+		for (const TSharedPtr<FJsonValue>& Value : *Channels)
+		{
+			const TSharedPtr<FJsonObject> Entry = Value->AsObject();
+			const FString ClassPath = Entry ? Entry->GetStringField(TEXT("class")) : FString();
+			UClass* Class = LoadObject<UClass>(nullptr, *ClassPath);
+			if (!Class || !Class->IsChildOf(UPoseSearchFeatureChannel::StaticClass()))
+			{
+				Errors.Add(FString::Printf(TEXT("channel class %s is not a pose search channel"), *ClassPath));
+				continue;
+			}
+			UPoseSearchFeatureChannel* Channel = NewObject<UPoseSearchFeatureChannel>(Schema, Class, NAME_None, RF_Transactional);
+			if (Entry->HasField(TEXT("fields")) && !SetObjectFields(Channel, Entry, TEXT("fields")))
+			{
+				Errors.Add(FString::Printf(TEXT("fields of %s did not apply"), *ClassPath));
+			}
+			Schema->AddChannel(Channel);
+			Created.Add(Channel);
+		}
+		return true;
+	}
+
+	TArray<TSharedPtr<FJsonValue>> DescribeChannels(const TArray<UPoseSearchFeatureChannel*>& Channels)
+	{
+		TArray<TSharedPtr<FJsonValue>> Described;
+		for (const UPoseSearchFeatureChannel* Channel : Channels)
+		{
+			const TSharedRef<FJsonObject> Fields = MakeShared<FJsonObject>();
+			if (FJsonObjectConverter::UStructToJsonObject(Channel->GetClass(), Channel, Fields, 0, 0))
+			{
+				Fields->SetStringField(TEXT("class"), Channel->GetClass()->GetPathName());
+				Described.Add(MakeShared<FJsonValueObject>(Fields));
+			}
+		}
+		return Described;
+	}
+
 	FFloatInterval PlayRateOf(const TSharedPtr<FJsonObject>& Request)
 	{
 		const TArray<TSharedPtr<FJsonValue>>* Range = nullptr;
@@ -137,7 +205,13 @@ TSharedRef<FJsonObject> VgeMotionMatching::Build(const TSharedPtr<FJsonObject>& 
 
 	UPoseSearchSchema* Schema = NewAsset<UPoseSearchSchema>(Folder, Name + TEXT("_Schema"));
 	Schema->AddSkeleton(Skeleton);
-	Schema->AddDefaultChannels();
+	TArray<FString> FieldErrors;
+	TArray<UPoseSearchFeatureChannel*> CreatedChannels;
+	const bool bChannels = AddChannels(Schema, Request, CreatedChannels, FieldErrors);
+	if (!bChannels)
+	{
+		Schema->AddDefaultChannels();
+	}
 
 	UPoseSearchDatabase* Database = NewAsset<UPoseSearchDatabase>(Folder, Name + TEXT("_Database"));
 	Database->Schema = Schema;
@@ -146,6 +220,16 @@ TSharedRef<FJsonObject> VgeMotionMatching::Build(const TSharedPtr<FJsonObject>& 
 		FPoseSearchDatabaseAnimationAsset Entry;
 		Entry.AnimAsset = Sequence;
 		Database->AddAnimationAsset(Entry);
+	}
+	UPoseSearchNormalizationSet* Normalization = nullptr;
+	FString NormalizationPath;
+	if (Request->TryGetStringField(TEXT("normalization"), NormalizationPath))
+	{
+		Normalization = FindObject<UPoseSearchNormalizationSet>(nullptr, *NormalizationPath);
+		Normalization = Normalization ? Normalization : NewAsset<UPoseSearchNormalizationSet>(FPackageName::GetLongPackagePath(NormalizationPath), FPackageName::ObjectPathToObjectName(NormalizationPath));
+		Normalization->Databases.AddUnique(Database);
+		Database->NormalizationSet = Normalization;
+		Schema->DataPreprocessor = EPoseSearchDataPreprocessor::NormalizeWithCommonSchema;
 	}
 
 	UAnimBlueprintFactory* Factory = NewObject<UAnimBlueprintFactory>();
@@ -188,14 +272,32 @@ TSharedRef<FJsonObject> VgeMotionMatching::Build(const TSharedPtr<FJsonObject>& 
 	}
 	SetNodeField(Matching, TEXT("bUseInertialBlend"), false);
 	SetNodeField(Matching, TEXT("PlayRate"), PlayRateOf(Request));
+	const TSharedPtr<FJsonObject>* MatchingFields = nullptr;
+	if (Request->TryGetObjectField(TEXT("node"), MatchingFields))
+	{
+		SetNodeFields(Matching, *MatchingFields);
+	}
 	PosePin(Matching, EGPD_Output)->MakeLinkTo(PosePin(History, EGPD_Input));
 	PosePin(History, EGPD_Output)->MakeLinkTo(PosePin(Root, EGPD_Input));
 
 	FKismetEditorUtilities::CompileBlueprint(Blueprint);
 	const bool bCompiled = Blueprint->Status != BS_Error;
 
-	const bool bSaved = UEditorLoadingAndSavingUtils::SavePackages({ Schema->GetPackage(), Database->GetPackage(), GraphPackage }, false);
+	if (SetObjectFields(Schema, Request, TEXT("schema")) || bChannels)
+	{
+		Schema->PostEditChange();
+	}
+	if (SetObjectFields(Database, Request, TEXT("database")))
+	{
+		Database->PostEditChange();
+	}
+	const bool bSaved = UEditorLoadingAndSavingUtils::SavePackages(Normalization ? TArray<UPackage*>{ Schema->GetPackage(), Database->GetPackage(), GraphPackage, Normalization->GetPackage() } : TArray<UPackage*>{ Schema->GetPackage(), Database->GetPackage(), GraphPackage }, false);
 	Result->SetBoolField(TEXT("saved"), bSaved && bCompiled);
+	Result->SetArrayField(TEXT("channels"), DescribeChannels(CreatedChannels));
+	if (!FieldErrors.IsEmpty())
+	{
+		Result->SetStringField(TEXT("error"), FString::Join(FieldErrors, TEXT("; ")));
+	}
 	Result->SetStringField(TEXT("animClass"), Blueprint->GeneratedClass ? Blueprint->GeneratedClass->GetPathName() : FString());
 	Result->SetStringField(TEXT("database"), Database->GetPathName());
 	if (!bCompiled)

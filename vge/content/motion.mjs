@@ -16,7 +16,7 @@ export function createMotionModules({ materials, folderRoot }) {
 export function motionHandleModule(exports, paths = {}) {
   const lines = [`import { motionMatchingAsset } from '${CONTENT_MODULE}';`];
   for (const entry of exports) {
-    const handle = { kind: 'motion-matching', key: entry.exportKey, ...(paths[entry.exportKey] ? { path: paths[entry.exportKey] } : {}) };
+    const handle = { kind: 'motion-matching', key: entry.exportKey, ...(paths[entry.exportKey] ? { path: paths[entry.exportKey] } : {}), ...(entry.runtime?.continuingPoseCostBias !== undefined ? { continuingPoseCostBias: entry.runtime.continuingPoseCostBias } : {}) };
     const value = `motionMatchingAsset(${JSON.stringify(handle)})`;
     lines.push(entry.exportName === 'default' ? `export default ${value};` : `export const ${entry.exportName} = ${value};`);
   }
@@ -30,7 +30,9 @@ export async function buildMotionMatching(service, entry, { objectsOf }) {
     if (!sequence) throw new Error(`${entry.exportKey}: clip ${clip} has no built animation sequence`);
     return sequence.path;
   });
-  const result = await service.call('motion-matching', { path: entry.path.replace(/\.[^./]+$/, ''), skeleton: entry.request.skeleton, clips, ...(entry.request.playRate ? { playRate: entry.request.playRate } : {}) });
+  const skeleton = entry.request.skeleton.startsWith('/') ? entry.request.skeleton : (objectsOf(entry.request.skeleton) ?? []).find((object) => object.class === 'Skeleton')?.path;
+  if (!skeleton) throw new Error(`${entry.exportKey}: ${entry.request.skeleton} has no imported skeleton`);
+  const result = await service.call('motion-matching', { path: entry.path.replace(/\.[^./]+$/, ''), skeleton, clips, ...(entry.request.playRate ? { playRate: entry.request.playRate } : {}), ...(entry.request.node ? { node: entry.request.node } : {}), ...(entry.request.schema ? { schema: entry.request.schema } : {}), ...(entry.request.database ? { database: entry.request.database } : {}), ...(entry.request.channels ? { channels: entry.request.channels } : {}), ...(entry.request.normalization ? { normalization: entry.request.normalization } : {}) });
   if (result.error) throw new Error(`${entry.exportKey}: ${result.error} ${JSON.stringify(result.clips ?? [])}`);
-  return { path: result.animClass, database: result.database, clips: result.clips };
+  return { path: result.animClass, database: result.database, clips: result.clips, channels: result.channels };
 }

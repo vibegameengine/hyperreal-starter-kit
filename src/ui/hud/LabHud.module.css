@@ -20,6 +20,13 @@
   opacity: 0.8;
 }
 
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
 .rows {
   margin: 4px 0 0;
   display: grid;

@@ -52,11 +52,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Vge")
 	bool MountContent(const FString& PakPath, const FString& PluginName, const FString& ShaderLibrary);
 
-	// Unmounts a container MountContent mounted, closing its files so the content pipeline can delete it: the
-	// container a newer build superseded (every live build holds all live content, and a chunk is read from the newest
-	// container that has it). Packages already loaded from it stay loaded.
-	UFUNCTION(BlueprintCallable, Category = "Vge")
-	bool UnmountContent(const FString& PakPath);
 
 private:
 	void EnterCodeBuiltWorld();

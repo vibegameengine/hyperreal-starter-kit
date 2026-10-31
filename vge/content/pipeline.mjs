@@ -18,7 +18,7 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 import { engine, runtimeDir } from '../tools/engine.mjs';
-import { importSpec, modelsOf, specOfModelKey } from './characters.mjs';
+import { clipsRequests, importSpec, modelsOf, specOfModelKey } from './characters.mjs';
 import { clothOf } from './cloth.mjs';
 import { meshSettingsOf } from './meshSettings.mjs';
 import { createStandbyCooker } from './cooker.mjs';
@@ -26,6 +26,8 @@ import { buildNiagaraSystem } from './niagara.mjs';
 import { buildTerrainLevel } from './terrain.mjs';
 import { buildMotionMatching } from './motion.mjs';
 import { buildComputeGraph } from './compute.mjs';
+import { buildPcgGraph } from './pcg.mjs';
+import { buildFracture } from './fracture.mjs';
 import { assetName, createDecoder } from './decode.mjs';
 import { prepareSound } from './sound.mjs';
 import { createContentService } from './service.mjs';
@@ -43,10 +45,21 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
   const project = resolve(projectDir, 'VibeGameEngine.uproject');
   const devDir = resolve(projectDir, '..');
   const modelKeysOf = (entry) => [...(entry.request?.grass ?? []).map((grass) => grass.model), ...(entry.request?.models ?? [])].map((model) => specOfModelKey(devDir, model).key);
-  const versionByModels = (entry) => {
+  const toolsVersion = (() => {
+    const hash = createHash('sha1');
+    const walk = (dir) => {
+      for (const name of readdirSync(dir).sort()) {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) walk(path);
+        else hash.update(name).update(readFileSync(path));
+      }
+    };
+    walk(resolve(projectDir, 'Source', 'VibeGameEngineTools'));
+    return hash.digest('hex');
+  })();
+  const versionOf = (entry) => {
     const models = modelKeysOf(entry);
-    if (!models.length) return entry;
-    const builds = createHash('sha1').update(JSON.stringify(models.map((model) => state.assets[model]?.build ?? 0))).digest('hex').slice(0, 8);
+    const builds = createHash('sha1').update(JSON.stringify([toolsVersion, models.map((model) => state.assets[model]?.build ?? 0)])).digest('hex').slice(0, 8);
     const folder = `${entry.folder}_${builds}`;
     return { ...entry, folder, path: entry.path.split(entry.folder).join(folder) };
   };
@@ -260,7 +273,7 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     const clothErrors = (imported.cloth ?? []).flatMap((mesh) => [mesh.error, ...(mesh.sections ?? []).map((section) => section.error)]).filter(Boolean);
     if (clothErrors.length) throw new Error(`cloth of ${key}: ${clothErrors.join('; ')}`);
     const previous = job.assets[key] ?? state.assets[key];
-    if (previous) await service.call('delete', { path: previous.dest });
+    if (previous) job.retired.push(previous.dest);
     job.assets[key] = { source: sourcePath, sourceMtimeMs: statSync(sourcePath).mtimeMs, clothMtimeMs: cloth?.mtimeMs, meshSettingsMtimeMs: meshSettings?.mtimeMs, dest, objects: imported.objects, build: job.buildId, decoded: decoded.decoded, spec: { kind: 'model' } };
     return imported.objects;
   }
@@ -292,7 +305,7 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     const dest = `/${PLUGIN}/${name}_${tag}`;
     const imported = await service.call('import-sound', { source: prepared.file, dest });
     writeFileSync(join(logs, `import-${name}.json`), JSON.stringify({ prepared, imported }, null, 2));
-    if (previous) await service.call('delete', { path: previous.dest });
+    if (previous) job.retired.push(previous.dest);
     job.assets[spec.key] = { source: spec.file, sourceMtimeMs: statSync(spec.file).mtimeMs, dest, objects: imported.objects, build: buildId, spec: { kind: 'sound', optimize: spec.optimize } };
   }
 
@@ -330,12 +343,22 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     const container = addContainer(packaged, job.buildId, folders);
     for (const [key, asset] of Object.entries(job.assets)) state.assets[key] = { ...asset, container };
     saveState();
+    deleteRetired(job.retired);
     return packaged.container;
+  }
+
+  function deleteRetired(paths) {
+    if (!paths.length) return;
+    const t0 = Date.now();
+    service
+      .call('delete', { paths })
+      .then(() => log(`[content] deleted ${paths.length} replaced version(s) in ${((Date.now() - t0) / 1000).toFixed(1)} s`))
+      .catch((err) => console.error(`[content] deleting replaced versions: ${err.message}`));
   }
 
   async function build(spec) {
     // What this build imports is published, with its container, only once the container is written.
-    const job = { ...newBuild(), assets: {} };
+    const job = { ...newBuild(), assets: {}, retired: [] };
     const timings = {};
     const t0 = Date.now();
     await importForBuild(spec, job);
@@ -351,7 +374,7 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     const unchanged = entries.filter((entry) => !stale.includes(entry));
     for (const { spec, done } of unchanged) for (const onDone of done) onDone(null, { key: spec.key, timings: null, manifest: manifest() });
     if (!stale.length) return;
-    const job = { ...newBuild(), assets: {} };
+    const job = { ...newBuild(), assets: {}, retired: [] };
     const timings = {};
     const t0 = Date.now();
     const batchKeys = new Set(stale.map(({ spec }) => spec.key));
@@ -367,7 +390,10 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
         failed.set(spec.key, err);
       }
     }
-    for (const { spec } of stale.filter((entry) => !isModel(entry.spec))) {
+    const ready = (spec) => spec.kind === 'clips' && modelsOf(spec).every((model) => (state.assets[model] || job.assets[model]) && !failed.has(model));
+    const together = stale.map(({ spec }) => spec).filter(ready);
+    await importClipsTogether(together, job, failed);
+    for (const { spec } of stale.filter((entry) => !isModel(entry.spec) && !together.includes(entry.spec))) {
       try {
         await importForBuild(spec, job, batchKeys);
       } catch (err) {
@@ -394,17 +420,50 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     }
   }
 
-  // A clips or retargetFrom import into its own content folder; the version it replaces is deleted.
+  // A clips or retargetFrom import into its own content folder; the version it replaces is deleted after packaging.
   async function importVariant(spec, job) {
-    const { buildId, tag, logs } = job;
+    const assetOf = (key) => job.assets[key] ?? state.assets[key];
+    const dest = variantDest(spec, job);
+    const objects = await importSpec(service, spec, dest, { modelObjects: (key) => assetOf(key)?.objects });
+    recordVariant(spec, dest, objects, job);
+  }
+
+  function variantDest(spec, job) {
+    return `/${PLUGIN}/${assetName(spec.file)}${variantName(spec)}_${job.tag}`;
+  }
+
+  function recordVariant(spec, dest, objects, job) {
     const assetOf = (key) => job.assets[key] ?? state.assets[key];
     const previous = assetOf(spec.key);
-    const dest = `/${PLUGIN}/${assetName(spec.file)}${variantName(spec)}_${tag}`;
-    const objects = await importSpec(service, spec, dest, { modelObjects: (key) => assetOf(key)?.objects });
-    writeFileSync(join(logs, `${assetName(spec.file)}${variantName(spec)}.json`), JSON.stringify({ spec, objects }, null, 2));
-    if (previous) await service.call('delete', { path: previous.dest });
+    writeFileSync(join(job.logs, `${assetName(spec.file)}${variantName(spec)}.json`), JSON.stringify({ spec, objects }, null, 2));
+    if (previous) job.retired.push(previous.dest);
     const models = Object.fromEntries(modelsOf(spec).map((model) => [model, assetOf(model).build]));
-    job.assets[spec.key] = { source: spec.file, sourceMtimeMs: statSync(spec.file).mtimeMs, dest, objects, build: buildId, spec: { ...spec, file: undefined }, models };
+    job.assets[spec.key] = { source: spec.file, sourceMtimeMs: statSync(spec.file).mtimeMs, dest, objects, build: job.buildId, spec: { ...spec, file: undefined }, models };
+  }
+
+  async function importClipsTogether(specs, job, failed) {
+    const assetOf = (key) => job.assets[key] ?? state.assets[key];
+    const items = specs.flatMap((spec) => {
+      const dest = variantDest(spec, job);
+      try {
+        return [{ spec, dest, ...clipsRequests(spec, dest, { modelObjects: (key) => assetOf(key)?.objects }) }];
+      } catch (err) {
+        failed.set(spec.key, err);
+        return [];
+      }
+    });
+    if (!items.length) return;
+    const imported = (await service.call('many', { requests: items.map((item) => item.importRequest) })).results;
+    const retargets = items.map((item, index) => (item.retarget && !imported[index].error ? item.retarget(imported[index].objects ?? []) : null));
+    const pending = retargets.filter(Boolean);
+    const retargeted = pending.length ? (await service.call('many', { requests: pending })).results : [];
+    let next = 0;
+    items.forEach((item, index) => {
+      const result = retargets[index] ? retargeted[next++] : imported[index];
+      const error = imported[index].error ?? result.error;
+      if (error) failed.set(item.spec.key, new Error(`${item.spec.key}: ${error}`));
+      else recordVariant(item.spec, item.dest, result.objects, job);
+    });
   }
 
   // The content-folder name part that tells variants of one file apart: IdleOnManny, DefaultHumanoidFromManny.
@@ -505,7 +564,7 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     const inBuild = new Set();
 
     async function buildTaking(key, describedExports, taking) {
-      const exports = describedExports.map(versionByModels);
+      const exports = describedExports.map(versionOf);
       const t0 = Date.now();
       state[assetTable] ??= {};
       state.materialAssets ??= {};
@@ -533,7 +592,8 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
       const built = [];
       for (const entry of missing) {
         const result = await buildOne(service, entry, { objectsOf: (key) => state.assets[specOfModelKey(devDir, key).key]?.objects });
-        state[assetTable][entry.path] = { folder: entry.folder, modelBuilds: modelBuildsOf(entry) };
+        const clips = result?.clips?.map(({ path, length, rootSpeed }) => ({ path, length, rootSpeed }));
+        state[assetTable][entry.path] = { folder: entry.folder, modelBuilds: modelBuildsOf(entry), ...(clips ? { clips } : {}) };
         built.push(result);
       }
       timings.create = (Date.now() - t0) / 1000;
@@ -544,7 +604,8 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
         for (const entry of exports) {
           const models = modelKeysOf(entry);
           const modelBuilds = Object.fromEntries(models.map((model) => [model, state.assets[model]?.build]));
-          state[table][entry.exportKey] = { path: entry.path, user: entry.user, materials: entry.materials.map((m) => m.path), models, modelBuilds, build };
+          const clips = state[assetTable][entry.path]?.clips;
+          state[table][entry.exportKey] = { path: entry.path, user: entry.user, materials: entry.materials.map((m) => m.path), models, modelBuilds, build, ...(clips ? { clips } : {}) };
         }
       };
 
@@ -610,7 +671,9 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
   const terrain = describedAssets({ table: 'terrain', assetTable: 'terrainAssets', noun: 'terrain', buildOne: buildTerrainLevel });
   const motion = describedAssets({ table: 'motion', assetTable: 'motionAssets', noun: 'motion matching graph', buildOne: buildMotionMatching });
   const compute = describedAssets({ table: 'compute', assetTable: 'computeAssets', noun: 'compute graph', buildOne: buildComputeGraph });
-  const described = [niagara, terrain, motion, compute];
+  const pcg = describedAssets({ table: 'pcg', assetTable: 'pcgAssets', noun: 'PCG graph', buildOne: buildPcgGraph });
+  const fracture = describedAssets({ table: 'fracture', assetTable: 'fractureAssets', noun: 'geometry collection', buildOne: buildFracture });
+  const described = [niagara, terrain, motion, compute, pcg, fracture];
   const collectDescribed = async () => {
     for (const kind of described) await kind.collect();
   };
@@ -666,12 +729,12 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
   // per material module and Niagara module export, its asset; and the container of each asset pack.
   function manifest() {
     const packs = state.packs ?? {};
-    const containers = containersInUse().map((name) => ({ name, pak: state.containers[name].pak, shaderLibrary: state.containers[name].shaderLibrary, build: state.containers[name].build, folders: state.containers[name].folders ?? [] }));
+    const containers = containersInUse().map((name) => ({ name, pak: state.containers[name].pak, shaderLibrary: state.containers[name].shaderLibrary, build: state.containers[name].build }));
     if (!containers.length && !Object.keys(packs).length) return null;
     const assets = Object.fromEntries(Object.entries(state.assets).filter(([, a]) => a.container).map(([key, a]) => [key, { build: a.build, objects: a.objects }]));
     // The manifest's build is the newest one published: a build that failed or is still running does not change it.
     const build = containers.length ? Math.max(...containers.map((container) => container.build)) : state.build;
-    return { plugin: PLUGIN, build, containers, assets, materials: state.materials ?? {}, niagara: state.niagara ?? {}, terrain: state.terrain ?? {}, motion: state.motion ?? {}, compute: state.compute ?? {}, packs };
+    return { plugin: PLUGIN, build, containers, assets, materials: state.materials ?? {}, niagara: state.niagara ?? {}, terrain: state.terrain ?? {}, motion: state.motion ?? {}, compute: state.compute ?? {}, pcg: state.pcg ?? {}, fracture: state.fracture ?? {}, packs };
   }
 
   // An asset pack in the project's Content/<name> (added from Fab, vge/content/fab.mjs): its packages keep their
@@ -905,8 +968,7 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     const asset = state.assets[spec.key];
     if (asset?.sourceMtimeMs !== statSync(spec.file).mtimeMs) return true;
     if ((spec.kind ?? 'model') === 'model' && asset.clothMtimeMs !== clothOf(spec.file)?.mtimeMs) return true;
-    if ((spec.kind ?? 'model') === 'model' && asset.meshSettingsMtimeMs !== meshSettingsOf(spec.file)?.mtimeMs) return true;
-    return Object.entries(asset.models ?? {}).some(([model, build]) => state.assets[model]?.build !== build);
+    if ((spec.kind ?? 'model') === 'model' && asset.meshSettingsMtimeMs !== meshSettingsOf(spec.file)?.mtimeMs) return true;    return Object.entries(asset.models ?? {}).some(([model, build]) => state.assets[model]?.build !== build);
   };
   // Every import of a file, for a save of it: the file itself and its variants (clips, retargets).
   const specsOf = (file) =>
@@ -922,14 +984,18 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     enqueueTerrain: terrain.enqueue,
     enqueueMotion: motion.enqueue,
     enqueueCompute: compute.enqueue,
+    enqueuePcg: pcg.enqueue,
+    enqueueFracture: fracture.enqueue,
     // The material assets each export of a material module has now (content/materials.mjs: is a build needed).
     materialState: () => ({ materials: state.materials ?? {}, assets: state.materialAssets ?? {} }),
     // The same for the systems of Niagara modules and the levels of terrain modules.
     niagaraState: niagara.currentState,
     terrainState: terrain.currentState,
     motionState: motion.currentState,
-    versionByModels,
+    versionOf,
     computeState: compute.currentState,
+    pcgState: pcg.currentState,
+    fractureState: fracture.currentState,
     isStale,
     specsOf,
     manifest,

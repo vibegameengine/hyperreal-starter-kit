@@ -16,6 +16,7 @@ async function loadLab(id: string): Promise<SceneModule | undefined> {
 
 function loadScene(id: string): Promise<SceneModule | undefined> {
   if (id === 'main') return import('../scenes/main');
+  if (id === 'world') return import('../scenes/world');
   if (id.startsWith('labs/')) return loadLab(id.slice('labs/'.length));
   return Promise.resolve(undefined);
 }

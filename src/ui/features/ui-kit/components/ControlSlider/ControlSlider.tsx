@@ -1,3 +1,4 @@
+import { useDraggedValue } from '../../systems/useDraggedValue'
 import styles from './ControlSlider.module.css'
 
 type ControlSliderProps = {
@@ -7,6 +8,7 @@ type ControlSliderProps = {
   readonly max?: number
   readonly min?: number
   readonly onChange: (value: number) => void
+  readonly onCommit?: (value: number) => void
   readonly step?: number
   readonly value: number
   readonly format?: (value: number) => string
@@ -24,15 +26,18 @@ export function ControlSlider({
   max = 1,
   min = 0,
   onChange,
+  onCommit,
   step = 0.05,
   value,
 }: ControlSliderProps) {
+  const dragged = useDraggedValue({ value, onChange, onCommit })
+  const shown = dragged.shown
   const span = max - min
-  const fill = span > 0 ? ((value - min) / span) * 100 : 0
+  const fill = span > 0 ? ((shown - min) / span) * 100 : 0
 
   return (
     <label className={styles.row}>
-      <span className={styles.label}>{label}</span>
+      {label ? <span className={styles.label}>{label}</span> : null}
       <input
         aria-label={label}
         className={styles.input}
@@ -40,13 +45,16 @@ export function ControlSlider({
         disabled={disabled}
         max={max}
         min={min}
-        onChange={(event) => onChange(Number(event.target.value))}
+        onChange={(event) => dragged.change(Number(event.target.value))}
+        onKeyUp={(event) => dragged.commit(Number(event.currentTarget.value))}
+        onPointerDown={dragged.press}
+        onPointerUp={(event) => dragged.commit(Number(event.currentTarget.value))}
         step={step}
         style={{ '--fill': `${fill}%` } as React.CSSProperties}
         type="range"
-        value={value}
+        value={shown}
       />
-      <output className={styles.value}>{format(value)}</output>
+      <output className={styles.value}>{format(shown)}</output>
     </label>
   )
 }

@@ -1,6 +1,6 @@
 import * as UE from 'ue';
 import { useEffect, useRef } from 'react';
-import { gameInstance } from '../engine/world';
+import { gameInstance, onFrame } from '../engine/world';
 
 export type HudMessage = { type: string; [key: string]: unknown };
 
@@ -10,13 +10,21 @@ export function sendToHud(message: HudMessage) {
   hudPage().Send(JSON.stringify(message));
 }
 
-const HUD_STATE_EVERY_MS = 200;
+const HUD_STATE_HEARTBEAT_MS = 500;
 export function useHudState(type: string, state: () => Record<string, unknown>) {
   const latest = useRef(state);
   latest.current = state;
   useEffect(() => {
-    const timer = setInterval(() => sendToHud({ type, ...latest.current() }), HUD_STATE_EVERY_MS);
-    return () => clearInterval(timer);
+    let sent = '';
+    let sentAt = 0;
+    return onFrame(() => {
+      const text = JSON.stringify({ type, ...latest.current() });
+      const now = Date.now();
+      if (text === sent && now - sentAt < HUD_STATE_HEARTBEAT_MS) return;
+      sent = text;
+      sentAt = now;
+      hudPage().Send(text);
+    }, { tickEvenWhenPaused: true });
   }, [type]);
 }
 
@@ -28,4 +36,10 @@ export function useHudMessages(handle: (message: HudMessage) => void) {
     hudPage().OnMessage.Add(listener);
     return () => hudPage().OnMessage.Remove(listener);
   }, []);
+}
+
+export function onHudMessage(handle: (message: HudMessage) => void) {
+  const listener = (json: string) => handle(JSON.parse(json) as HudMessage);
+  hudPage().OnMessage.Add(listener);
+  return () => hudPage().OnMessage.Remove(listener);
 }

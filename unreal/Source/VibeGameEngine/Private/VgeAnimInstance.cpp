@@ -1223,7 +1223,12 @@ void FVgeAnimInstanceProxy::PreUpdate(UAnimInstance* InAnimInstance, float Delta
 	FAnimInstanceProxy::PreUpdate(InAnimInstance, DeltaSeconds);
 
 	// On the game thread, before the update that may run on a worker.
-	Variables = CastChecked<UVgeAnimInstance>(InAnimInstance)->GetVariables();
+	UVgeAnimInstance* Instance = CastChecked<UVgeAnimInstance>(InAnimInstance);
+	for (const UVgeAnimInstance::FPendingNodeParam& Param : Instance->TakePendingNodeParams())
+	{
+		SetNodeParam(Param.NodeId, Param.Prop, Param.Value, Instance);
+	}
+	Variables = Instance->GetVariables();
 	for (const FVgeAnimGraphBinding& Binding : Bindings)
 	{
 		FPropValue Value;
@@ -1416,7 +1421,20 @@ void UVgeAnimInstance::SetNodeParam(const FString& NodeId, const FString& Prop, 
 		UE_LOG(LogVgeAnim, Error, TEXT("SetNodeParam %s.%s: not a JSON value: %s"), *NodeId, *Prop, *Json);
 		return;
 	}
-	GetProxyOnGameThread<FVgeAnimInstanceProxy>().SetNodeParam(NodeId, Prop, Values[0], bRunning ? this : nullptr);
+	if (!bRunning)
+	{
+		GetProxyOnGameThread<FVgeAnimInstanceProxy>().SetNodeParam(NodeId, Prop, Values[0], nullptr);
+		return;
+	}
+	FPendingNodeParam* Pending = PendingNodeParams.FindByPredicate([&](const FPendingNodeParam& Param) { return Param.NodeId == NodeId && Param.Prop == Prop; });
+	if (Pending)
+	{
+		Pending->Value = Values[0];
+	}
+	else
+	{
+		PendingNodeParams.Add({ NodeId, Prop, Values[0] });
+	}
 }
 
 FString UVgeAnimInstance::DescribeGraph()

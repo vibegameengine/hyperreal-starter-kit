@@ -19,6 +19,8 @@ import { buildNiagaraSystem, createNiagaraModules, NIAGARA_MODULE, niagaraHandle
 import { buildTerrainLevel, createTerrainModules, TERRAIN_MODULE, terrainHandleModule } from '../content/terrain.mjs';
 import { buildMotionMatching, createMotionModules, MOTION_MODULE, motionHandleModule } from '../content/motion.mjs';
 import { buildComputeGraph, COMPUTE_MODULE, computeHandleModule, createComputeModules } from '../content/compute.mjs';
+import { buildPcgGraph, createPcgModules, PCG_MODULE, pcgHandleModule } from '../content/pcg.mjs';
+import { buildFracture, createFractureModules, FRACTURE_MODULE, fractureHandleModule } from '../content/fracture.mjs';
 import { contentAssetsPlugin } from '../vite/contentAssetsPlugin.mjs';
 import { materialsEnvironment, uiKitClientPlugins, unrealResolve } from '../vite/environments.mjs';
 import { materialAssetsPlugin } from '../vite/materialAssetsPlugin.mjs';
@@ -218,6 +220,34 @@ async function buildComputeModule(file, key) {
   return computeHandleModule(exports, paths);
 }
 
+const pcgModules = createPcgModules({ materials: materialModules, folderRoot: (key) => materialFolderOf(key) });
+async function buildPcgModule(file, key) {
+  const exports = await pcgModules.describe(file);
+  const paths = {};
+  for (const entry of exports) {
+    for (const model of entry.request.models) await importModel(join(devDir, model), model);
+    const built = await buildPcgGraph(service, entry, { objectsOf: (model) => importedModels.get(model) });
+    console.log(`[${TAG}] ${key} -> ${built.path}`);
+    paths[entry.exportKey] = built.path;
+  }
+  imported.push(key);
+  return pcgHandleModule(exports, paths);
+}
+
+const fractureModules = createFractureModules({ materials: materialModules, folderRoot: (key) => materialFolderOf(key) });
+async function buildFractureModule(file, key) {
+  const exports = await fractureModules.describe(file);
+  const paths = {};
+  for (const entry of exports) {
+    for (const model of entry.request.models) await importModel(join(devDir, model), model);
+    const built = await buildFracture(service, entry, { objectsOf: (model) => importedModels.get(model) });
+    console.log(`[${TAG}] ${key} -> ${built.path}`);
+    paths[entry.exportKey] = built.path;
+  }
+  imported.push(key);
+  return fractureHandleModule(exports, paths);
+}
+
 const builder = await createBuilder({
   configFile: false,
   root: devDir,
@@ -236,6 +266,8 @@ const builder = await createBuilder({
     materialAssetsPlugin({ root: devDir, onImport: buildTerrainModule, pattern: TERRAIN_MODULE, name: 'vge:terrain-assets' }),
     materialAssetsPlugin({ root: devDir, onImport: buildMotionModule, pattern: MOTION_MODULE, name: 'vge:motion-assets' }),
     materialAssetsPlugin({ root: devDir, onImport: buildComputeModule, pattern: COMPUTE_MODULE, name: 'vge:compute-assets' }),
+    materialAssetsPlugin({ root: devDir, onImport: buildPcgModule, pattern: PCG_MODULE, name: 'vge:pcg-assets' }),
+    materialAssetsPlugin({ root: devDir, onImport: buildFractureModule, pattern: FRACTURE_MODULE, name: 'vge:fracture-assets' }),
   ],
   environments: {
     unreal: {

@@ -13,7 +13,7 @@ export interface TerrainExport {
   materials: MaterialAsset[];
 }
 
-const FORMAT = 3;
+const FORMAT = 4;
 const MID = 32768;
 const UNITS_PER_SCALE = 128;
 const MAX_UNITS = 32000;
@@ -149,6 +149,7 @@ export function describeModule(fileKey: string, moduleExports: Record<string, un
         grass: (description.grass ?? []).map((g) => ({ ...g, model: modelKeyOf(fileKey, g.model), material: materialPathOf(g.material, materialRoot, names, materials) })),
         ...(material ? { material } : {}),
         ...(description.runtimeMaterialParameters ? { runtimeMaterialParameters: true } : {}),
+        ...(description.water ? { water: description.water } : {}),
       };
       const summary = { components: description.components, sections: sampled.sections, quads: sampled.quads, spacing: sampled.spacing, scaleZ, material, layers: (description.layers ?? []).map((l) => l.name) };
       const name = exportAssetName(fileKey, exportName);

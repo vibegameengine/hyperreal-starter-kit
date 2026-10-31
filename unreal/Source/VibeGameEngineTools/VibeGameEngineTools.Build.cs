@@ -23,6 +23,7 @@ public class VibeGameEngineTools : ModuleRules
 		// the ToolsetRegistry, and the system's own compile.
 		PrivateDependencyModuleNames.AddRange(new string[] { "ToolsetRegistry", "Niagara", "NiagaraEditor" });
 		PrivateDependencyModuleNames.Add("Landscape");
+		PrivateDependencyModuleNames.AddRange(new string[] { "Water", "WaterEditor" });
 		PrivateDependencyModuleNames.AddRange(new string[] { "PoseSearch", "AnimGraph", "AnimGraphRuntime", "AnimationWarpingRuntime", "BlueprintGraph", "Kismet" });
 		// Ragdolls for imported skeletal meshes (VgeRagdoll.cpp): the editor's physics asset creation.
 		PrivateDependencyModuleNames.AddRange(new string[] { "PhysicsUtilities", "PhysicsCore" });

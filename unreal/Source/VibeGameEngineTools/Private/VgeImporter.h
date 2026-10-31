@@ -43,11 +43,12 @@ namespace VgeImporter
 
 	// Imports only the animations of Source onto an existing skeleton (Interchange's "import only
 	// animations" with the skeleton set), into Dest. Returns the same report as Import.
-	TSharedRef<FJsonObject> ImportAnimations(const FString& Source, const FString& Dest, const FString& SkeletonPath);
+	TSharedRef<FJsonObject> ImportAnimations(const FString& Source, const FString& Dest, const FString& SkeletonPath, const TSharedPtr<FJsonObject>& Request);
 
 	TSharedRef<FJsonObject> ImportSound(const FString& Source, const FString& Dest);
 
 	// Removes every asset under a content path from memory, the asset registry and disk.
 	// Returns the number of packages deleted.
 	int32 DeleteContentPath(const FString& ContentPath);
+	int32 DeleteContentPaths(const TArray<FString>& ContentPaths);
 }

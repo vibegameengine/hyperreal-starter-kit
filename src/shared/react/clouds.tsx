@@ -1,24 +1,31 @@
 import * as UE from 'ue';
-import { useEffect, useRef } from 'react';
-import { loadContent, onMaterial } from '../engine/content';
-import type { MaterialRef } from '../material';
+import { useEffect, useRef, useState } from 'react';
+import { onMaterial } from '../engine/content';
+import type { MaterialValue } from '../material';
+import { materialKeyOf, resolveMaterial } from './materials';
 
 export interface CloudsProps {
-  material?: MaterialRef;
+  material?: MaterialValue;
   bottomAltitude?: number;
   height?: number;
 }
 
 export function Clouds({ material, bottomAltitude, height }: CloudsProps) {
   const actor = useRef<UE.VolumetricCloud | null>(null);
+  const [builtPath, setBuiltPath] = useState('');
+  const base = material && (material.kind === 'dynamic' ? material.base : material);
 
   useEffect(() => {
-    if (!material) return;
-    return onMaterial(material, (built) => {
-      const loaded = loadContent<UE.MaterialInterface>(built.path);
-      if (loaded && actor.current) actor.current.VolumetricCloudComponent.SetMaterial(loaded);
-    });
-  }, [material?.key]);
+    if (!base) return;
+    return onMaterial(base, (built) => setBuiltPath(built.path));
+  }, [base?.key]);
+
+  useEffect(() => {
+    const component = actor.current?.VolumetricCloudComponent;
+    if (!material || !component || !builtPath) return;
+    const resolved = resolveMaterial(component, 'cloud', material);
+    if (resolved) component.SetMaterial(resolved);
+  }, [material && materialKeyOf(material), builtPath]);
 
   useEffect(() => {
     const component = actor.current?.VolumetricCloudComponent;
