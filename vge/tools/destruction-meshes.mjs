@@ -83,6 +83,12 @@ function column({ radius, height, plinth, sides }, tile) {
   return target;
 }
 
+const yUp = (values) => {
+  const out = new Float32Array(values.length);
+  for (let index = 0; index < values.length; index += 3) out.set([values[index], values[index + 2], -values[index + 1]], index);
+  return out;
+};
+
 async function model(name, shape, surface) {
   const document = new Document();
   const buffer = document.createBuffer();
@@ -100,8 +106,8 @@ async function model(name, shape, surface) {
     .createPrimitive()
     .setMaterial(material)
     .setIndices(accessor('SCALAR', new Uint32Array(shape.indices)))
-    .setAttribute('POSITION', accessor('VEC3', new Float32Array(shape.positions)))
-    .setAttribute('NORMAL', accessor('VEC3', new Float32Array(shape.normals)))
+    .setAttribute('POSITION', accessor('VEC3', yUp(shape.positions)))
+    .setAttribute('NORMAL', accessor('VEC3', yUp(shape.normals)))
     .setAttribute('TEXCOORD_0', accessor('VEC2', new Float32Array(shape.uvs)));
   const mesh = document.createMesh(name).addPrimitive(primitive);
   document.createScene(name).addChild(document.createNode(name).setMesh(mesh));

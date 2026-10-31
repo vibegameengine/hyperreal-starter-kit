@@ -41,6 +41,18 @@ const STATE_VERSION = 4;
 // Cook processes kept in standby: builds of this many files cook at the same time.
 const COOKERS = 3;
 
+function materialCompileFailures(log) {
+  const failures = new Map();
+  const lines = log.split(/\r?\n/);
+  for (const [index, line] of lines.entries()) {
+    const failed = line.match(/[\\/]Content[\\/](.+?)\.uasset: Failed to compile Material/);
+    const material = failed?.[1].replaceAll('\\', '/');
+    const reason = lines[index + 1]?.trim();
+    if (material && (reason || !failures.has(material))) failures.set(material, reason || 'see the cook log');
+  }
+  return [...failures].map(([material, reason]) => `${material}: ${reason}`);
+}
+
 export function createContentPipeline({ projectDir, release = 'dev', log = console.log }) {
   const project = resolve(projectDir, 'VibeGameEngine.uproject');
   const devDir = resolve(projectDir, '..');
@@ -202,6 +214,8 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     try {
       const cooked = await cooker.cook({ args: [`-OutputDir=${cookedRoot}`, '-CookSkipHardRefs', '-CookSkipSoftRefs'], folders });
       copyFileSync(cooked.logFile, join(logs, 'cook.log'));
+      const brokenMaterials = materialCompileFailures(readFileSync(cooked.logFile, 'utf8'));
+      if (brokenMaterials.length) throw new Error(`the cook could not compile ${brokenMaterials.join('; ')}`);
       timings.cook = cooked.seconds;
       if (cooked.waited > 0.05) timings.cookWait = cooked.waited;
 

@@ -20,7 +20,7 @@ export const brickWall = defineFracture({
     ['chunks:Collection', 'out:Collection'],
     ['mesh:Materials', 'out:Materials'],
   ],
-  collection: thresholds(400000, 60000, 8000),
+  collection: thresholds(200000, 40000, 8000),
 });
 
 export const stoneColumn = defineFracture({
@@ -39,5 +39,5 @@ export const stoneColumn = defineFracture({
     ['fracture:Collection', 'out:Collection'],
     ['mesh:Materials', 'out:Materials'],
   ],
-  collection: thresholds(250000, 20000),
+  collection: thresholds(150000, 20000),
 });

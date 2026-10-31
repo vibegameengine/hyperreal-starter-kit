@@ -26,6 +26,7 @@ export function Destructible({ collection, at, rotation, scale = 1, anchored = f
         const asset = loadContent<UE.GeometryCollection>(next.path);
         if (!target || !asset) return;
         target.SetRestCollection(asset, true);
+        target.SetRestCollection(asset, false);
         target.SetNotifyBreaks(true);
         target.SetSimulatePhysics(true);
         if (latest.current.anchored) target.SetAnchoredByIndex(0, true);
@@ -40,7 +41,7 @@ export function Destructible({ collection, at, rotation, scale = 1, anchored = f
       location={at}
       rotation={rotation}
       scale={[scale, scale, scale]}
-      objectType={anchored ? UE.EObjectStateTypeEnum.Chaos_Object_Kinematic : UE.EObjectStateTypeEnum.Chaos_Object_Dynamic}
+      objectType={anchored ? UE.EObjectStateTypeEnum.Chaos_Object_Kinematic : UE.EObjectStateTypeEnum.Chaos_Object_Sleeping}
       onChaosBreakEvent={onBreak}
     />
   );

@@ -13,6 +13,6 @@ return d * d * (3 - 2 * d);
 );
 
 const dust = defineMaterial(
-  <material usage={['niagaraSprites']} blendMode="Translucent" shadingModel="Unlit" emissiveColor={<particleColor />} opacity={<multiply a={puff} b={<componentMask a input={<particleColor />} />} />} />,
+  <material usage={['niagaraSprites']} blendMode="Translucent" shadingModel="Unlit" emissiveColor={<particleColor />} opacity={<multiply a={puff} b={<particleColor output="A" />} />} />,
 );
 export default dust;
