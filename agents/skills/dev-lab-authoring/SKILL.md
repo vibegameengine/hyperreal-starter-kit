@@ -223,6 +223,12 @@ unchanged: a real captured frame of that lab from a rendered window (never a
 `-nullrhi` process, never a hand-drawn icon), committed with the lab, re-captured
 when its look changes, and a missing one visibly missing.
 
+**Enforced.** A lab is not finished without its preview: creating a lab means capturing it in the same change.
+`.claude/hooks/lab-previews-guard.mjs` (a Stop hook in `.claude/settings.json`) refuses to end an agent's turn while
+any `src/features/*/ui/<id>.lab.ts` has no `src/ui/app/ui/labs/previews/<id>.webp`, and names the command that
+captures the missing ones. Written on 2026-10-30, when sixteen labs (pcg, destruction and vehicle among them) had
+been added without a preview while this rule stood here unchecked.
+
 ### 5. A lab is for a PERSON as much as for an agent
 
 A lab ships with the kit: people open it from the shell's index to see what the

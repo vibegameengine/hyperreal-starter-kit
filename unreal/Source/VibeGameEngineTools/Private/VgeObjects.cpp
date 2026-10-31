@@ -1,6 +1,10 @@
 #include "VgeObjects.h"
 
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "Engine/Blueprint.h"
+#include "Engine/BlueprintGeneratedClass.h"
 #include "FileHelpers.h"
+#include "Kismet2/KismetEditorUtilities.h"
 #include "JsonObjectConverter.h"
 #include "UObject/Package.h"
 #include "UObject/StructOnScope.h"
@@ -11,6 +15,36 @@ namespace
 	{
 		UObject* Object = StaticFindObject(UObject::StaticClass(), nullptr, *Path);
 		return Object ? Object : LoadObject<UObject>(nullptr, *Path);
+	}
+}
+
+namespace
+{
+	bool WriteProperties(UObject* Object, const TSharedPtr<FJsonObject>& Properties, const FString& Path, TSharedRef<FJsonObject>& Result)
+	{
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Entry : Properties->Values)
+		{
+			bool bKnown = false;
+			for (TFieldIterator<FProperty> It(Object->GetClass()); It && !bKnown; ++It)
+			{
+				bKnown = It->GetName().Equals(Entry.Key, ESearchCase::IgnoreCase);
+			}
+			if (!bKnown)
+			{
+				Result->SetStringField(TEXT("error"), FString::Printf(TEXT("%s (%s) has no property %s"), *Path, *Object->GetClass()->GetName(), *Entry.Key));
+				return false;
+			}
+		}
+		Object->Modify();
+		FText FailReason;
+		if (!FJsonObjectConverter::JsonObjectToUStruct(Properties.ToSharedRef(), Object->GetClass(), Object, 0, 0, /*bStrictMode*/ false, &FailReason))
+		{
+			Result->SetStringField(TEXT("error"), FString::Printf(TEXT("%s: %s"), *Path, *FailReason.ToString()));
+			return false;
+		}
+		Object->PostEditChange();
+		Object->MarkPackageDirty();
+		return true;
 	}
 }
 
@@ -30,29 +64,40 @@ TSharedRef<FJsonObject> VgeObjects::SetProperties(const TSharedPtr<FJsonObject>&
 		Result->SetStringField(TEXT("error"), TEXT("set-properties takes 'properties', an object"));
 		return Result;
 	}
-	for (const TPair<FString, TSharedPtr<FJsonValue>>& Entry : (*Properties)->Values)
+	if (WriteProperties(Object, *Properties, Path, Result))
 	{
-		bool bKnown = false;
-		for (TFieldIterator<FProperty> It(Object->GetClass()); It && !bKnown; ++It)
-		{
-			bKnown = It->GetName().Equals(Entry.Key, ESearchCase::IgnoreCase);
-		}
-		if (!bKnown)
-		{
-			Result->SetStringField(TEXT("error"), FString::Printf(TEXT("%s (%s) has no property %s"), *Path, *Object->GetClass()->GetName(), *Entry.Key));
-			return Result;
-		}
+		Result->SetStringField(TEXT("class"), Object->GetClass()->GetPathName());
 	}
-	Object->Modify();
-	FText FailReason;
-	if (!FJsonObjectConverter::JsonObjectToUStruct((*Properties).ToSharedRef(), Object->GetClass(), Object, 0, 0, /*bStrictMode*/ false, &FailReason))
+	return Result;
+}
+
+TSharedRef<FJsonObject> VgeObjects::CreateClass(const TSharedPtr<FJsonObject>& Request)
+{
+	TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
+	const FString PackagePath = Request->GetStringField(TEXT("path"));
+	const FString ParentPath = Request->GetStringField(TEXT("parent"));
+	UClass* Parent = LoadObject<UClass>(nullptr, *ParentPath);
+	if (!Parent || !FKismetEditorUtilities::CanCreateBlueprintOfClass(Parent))
 	{
-		Result->SetStringField(TEXT("error"), FString::Printf(TEXT("%s: %s"), *Path, *FailReason.ToString()));
+		Result->SetStringField(TEXT("error"), FString::Printf(TEXT("no class %s to derive a Blueprint from"), *ParentPath));
 		return Result;
 	}
-	Object->PostEditChange();
-	Object->MarkPackageDirty();
-	Result->SetStringField(TEXT("class"), Object->GetClass()->GetPathName());
+	const FString Name = FPackageName::GetLongPackageAssetName(PackagePath);
+	UPackage* Package = CreatePackage(*PackagePath);
+	UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(Parent, Package, *Name, BPTYPE_Normal, UBlueprint::StaticClass(), UBlueprintGeneratedClass::StaticClass());
+	if (!Blueprint || !Blueprint->GeneratedClass)
+	{
+		Result->SetStringField(TEXT("error"), FString::Printf(TEXT("could not create %s"), *PackagePath));
+		return Result;
+	}
+	FAssetRegistryModule::AssetCreated(Blueprint);
+	const TSharedPtr<FJsonObject>* Defaults = nullptr;
+	if (Request->TryGetObjectField(TEXT("defaults"), Defaults) && !WriteProperties(Blueprint->GeneratedClass->GetDefaultObject(), *Defaults, PackagePath, Result))
+	{
+		return Result;
+	}
+	Package->MarkPackageDirty();
+	Result->SetStringField(TEXT("class"), Blueprint->GeneratedClass->GetPathName());
 	return Result;
 }
 

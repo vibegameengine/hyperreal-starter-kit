@@ -21,6 +21,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/lab-previews-guard.mjs\""
+          }
+        ]
+      }
     ]
   }
 }

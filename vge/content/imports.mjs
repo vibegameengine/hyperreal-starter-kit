@@ -9,7 +9,7 @@ import { init, parse } from 'es-module-lexer';
 import { transformSync } from 'esbuild';
 import { contentSpec, modelsOf } from './characters.mjs';
 
-const MODEL = /\.(glb|gltf|fbx|wav|mp3|ogg|flac|opus|aif|aiff)$/i;
+const MODEL = /\.(glb|gltf|fbx|abc|wav|mp3|ogg|flac|opus|aif|aiff)$/i;
 const CODE = /\.(m?[jt]sx?)$/;
 const MODULE_EXTENSIONS = ['', '.tsx', '.ts', '.jsx', '.js'];
 
@@ -50,7 +50,7 @@ export async function importedContent({ root, srcDir }) {
         for (const model of modelsOf(spec)) models.add(model);
         continue;
       }
-      if (!/\.(material|niagara|terrain|motion|compute|pcg|fracture)(\.[jt]sx?)?$/.test(path)) continue;
+      if (!/\.(material|niagara|terrain|motion|compute|pcg|fracture|vehicle|groom)(\.[jt]sx?)?$/.test(path)) continue;
       const found = MODULE_EXTENSIONS.map((extension) => target + extension).find((candidate) => existsSync(candidate) && CODE.test(candidate));
       if (found) modules.add(keyOf(found));
     }

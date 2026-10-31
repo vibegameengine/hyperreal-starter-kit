@@ -11,7 +11,7 @@ import { contentSpec } from '../content/characters.mjs';
 import { CLOTH_SUFFIX, clothFileOf, modelsOfClothFile } from '../content/cloth.mjs';
 import { MESH_SETTINGS_SUFFIX, meshSettingsFileOf, modelsOfMeshSettingsFile } from '../content/meshSettings.mjs';
 
-const MODEL = /\.(glb|gltf|fbx|wav|mp3|ogg|flac|opus|aif|aiff)$/i;
+const MODEL = /\.(glb|gltf|fbx|abc|wav|mp3|ogg|flac|opus|aif|aiff)$/i;
 const CONTENT_MODULE = '/src/shared/engine/content.ts';
 
 // `onImport(spec)` runs when the game code first loads an import (content/characters.mjs contentSpec) and returns the

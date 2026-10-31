@@ -28,6 +28,8 @@ import { buildMotionMatching } from './motion.mjs';
 import { buildComputeGraph } from './compute.mjs';
 import { buildPcgGraph } from './pcg.mjs';
 import { buildFracture } from './fracture.mjs';
+import { buildVehicle } from './vehicle.mjs';
+import { buildGroomBinding } from './groom.mjs';
 import { assetName, createDecoder } from './decode.mjs';
 import { prepareSound } from './sound.mjs';
 import { createContentService } from './service.mjs';
@@ -687,7 +689,9 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
   const compute = describedAssets({ table: 'compute', assetTable: 'computeAssets', noun: 'compute graph', buildOne: buildComputeGraph });
   const pcg = describedAssets({ table: 'pcg', assetTable: 'pcgAssets', noun: 'PCG graph', buildOne: buildPcgGraph });
   const fracture = describedAssets({ table: 'fracture', assetTable: 'fractureAssets', noun: 'geometry collection', buildOne: buildFracture });
-  const described = [niagara, terrain, motion, compute, pcg, fracture];
+  const vehicle = describedAssets({ table: 'vehicle', assetTable: 'vehicleAssets', noun: 'vehicle', buildOne: buildVehicle });
+  const groom = describedAssets({ table: 'groom', assetTable: 'groomAssets', noun: 'groom binding', buildOne: buildGroomBinding });
+  const described = [niagara, terrain, motion, compute, pcg, fracture, vehicle, groom];
   const collectDescribed = async () => {
     for (const kind of described) await kind.collect();
   };
@@ -748,7 +752,7 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     const assets = Object.fromEntries(Object.entries(state.assets).filter(([, a]) => a.container).map(([key, a]) => [key, { build: a.build, objects: a.objects }]));
     // The manifest's build is the newest one published: a build that failed or is still running does not change it.
     const build = containers.length ? Math.max(...containers.map((container) => container.build)) : state.build;
-    return { plugin: PLUGIN, build, containers, assets, materials: state.materials ?? {}, niagara: state.niagara ?? {}, terrain: state.terrain ?? {}, motion: state.motion ?? {}, compute: state.compute ?? {}, pcg: state.pcg ?? {}, fracture: state.fracture ?? {}, packs };
+    return { plugin: PLUGIN, build, containers, assets, materials: state.materials ?? {}, niagara: state.niagara ?? {}, terrain: state.terrain ?? {}, motion: state.motion ?? {}, compute: state.compute ?? {}, pcg: state.pcg ?? {}, fracture: state.fracture ?? {}, vehicle: state.vehicle ?? {}, groom: state.groom ?? {}, packs };
   }
 
   // An asset pack in the project's Content/<name> (added from Fab, vge/content/fab.mjs): its packages keep their
@@ -1000,6 +1004,8 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     enqueueCompute: compute.enqueue,
     enqueuePcg: pcg.enqueue,
     enqueueFracture: fracture.enqueue,
+    enqueueVehicle: vehicle.enqueue,
+    enqueueGroom: groom.enqueue,
     // The material assets each export of a material module has now (content/materials.mjs: is a build needed).
     materialState: () => ({ materials: state.materials ?? {}, assets: state.materialAssets ?? {} }),
     // The same for the systems of Niagara modules and the levels of terrain modules.
@@ -1010,6 +1016,8 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     computeState: compute.currentState,
     pcgState: pcg.currentState,
     fractureState: fracture.currentState,
+    vehicleState: vehicle.currentState,
+    groomState: groom.currentState,
     isStale,
     specsOf,
     manifest,

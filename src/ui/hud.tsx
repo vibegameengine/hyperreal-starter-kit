@@ -29,6 +29,9 @@ import { TripoGirlLabHud } from './hud/TripoGirlLabHud';
 import { VolumetricsLabHud } from './hud/VolumetricsLabHud';
 import { PcgLabHud } from './hud/PcgLabHud';
 import { DestructionLabHud } from './hud/DestructionLabHud';
+import { VehicleLabHud } from './hud/VehicleLabHud';
+import { HairLabHud } from './hud/HairLabHud';
+import { MetaHumanLabHud } from './hud/MetaHumanLabHud';
 import './styles.css';
 
 createRoot(document.getElementById('root')!).render(
@@ -61,6 +64,9 @@ createRoot(document.getElementById('root')!).render(
     <VolumetricsLabHud />
     <PcgLabHud />
     <DestructionLabHud />
+    <VehicleLabHud />
+    <HairLabHud />
+    <MetaHumanLabHud />
     <EditPropCard />
   </StrictMode>,
 );

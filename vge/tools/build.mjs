@@ -21,6 +21,8 @@ import { buildMotionMatching, createMotionModules, MOTION_MODULE, motionHandleMo
 import { buildComputeGraph, COMPUTE_MODULE, computeHandleModule, createComputeModules } from '../content/compute.mjs';
 import { buildPcgGraph, createPcgModules, PCG_MODULE, pcgHandleModule } from '../content/pcg.mjs';
 import { buildFracture, createFractureModules, FRACTURE_MODULE, fractureHandleModule } from '../content/fracture.mjs';
+import { buildVehicle, createVehicleModules, VEHICLE_MODULE, vehicleHandleModule } from '../content/vehicle.mjs';
+import { buildGroomBinding, createGroomModules, GROOM_MODULE, groomHandleModule } from '../content/groom.mjs';
 import { contentAssetsPlugin } from '../vite/contentAssetsPlugin.mjs';
 import { materialsEnvironment, uiKitClientPlugins, unrealResolve } from '../vite/environments.mjs';
 import { materialAssetsPlugin } from '../vite/materialAssetsPlugin.mjs';
@@ -248,6 +250,42 @@ async function buildFractureModule(file, key) {
   return fractureHandleModule(exports, paths);
 }
 
+const vehicleModules = createVehicleModules({ materials: materialModules, folderRoot: (key) => materialFolderOf(key) });
+async function buildVehicleModule(file, key) {
+  const exports = await vehicleModules.describe(file);
+  const paths = {};
+  const objects = {};
+  for (const entry of exports) {
+    for (const model of entry.request.models) {
+      await importModel(join(devDir, model), model);
+      objects[model] = importedModels.get(model);
+    }
+    const built = await buildVehicle(service, entry);
+    console.log(`[${TAG}] ${key} -> ${built.path}`);
+    paths[entry.exportKey] = built.path;
+  }
+  imported.push(key);
+  return vehicleHandleModule(exports, paths, objects);
+}
+
+const groomModules = createGroomModules({ materials: materialModules, folderRoot: (key) => materialFolderOf(key) });
+async function buildGroomModule(file, key) {
+  const exports = await groomModules.describe(file);
+  const paths = {};
+  const objects = {};
+  for (const entry of exports) {
+    for (const model of entry.request.models) {
+      await importModel(join(devDir, model), model);
+      objects[model] = importedModels.get(model);
+    }
+    const built = await buildGroomBinding(service, entry, { objectsOf: (model) => importedModels.get(model) });
+    console.log(`[${TAG}] ${key} -> ${built.path}`);
+    paths[entry.exportKey] = built.path;
+  }
+  imported.push(key);
+  return groomHandleModule(exports, paths, objects);
+}
+
 const builder = await createBuilder({
   configFile: false,
   root: devDir,
@@ -268,6 +306,8 @@ const builder = await createBuilder({
     materialAssetsPlugin({ root: devDir, onImport: buildComputeModule, pattern: COMPUTE_MODULE, name: 'vge:compute-assets' }),
     materialAssetsPlugin({ root: devDir, onImport: buildPcgModule, pattern: PCG_MODULE, name: 'vge:pcg-assets' }),
     materialAssetsPlugin({ root: devDir, onImport: buildFractureModule, pattern: FRACTURE_MODULE, name: 'vge:fracture-assets' }),
+    materialAssetsPlugin({ root: devDir, onImport: buildVehicleModule, pattern: VEHICLE_MODULE, name: 'vge:vehicle-assets' }),
+    materialAssetsPlugin({ root: devDir, onImport: buildGroomModule, pattern: GROOM_MODULE, name: 'vge:groom-assets' }),
   ],
   environments: {
     unreal: {

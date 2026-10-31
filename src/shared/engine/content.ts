@@ -6,6 +6,8 @@ import type { ComputeRef } from '../compute';
 import type { TerrainRef } from '../terrain';
 import type { PcgGraphRef } from '../pcg';
 import type { GeometryCollectionRef } from '../fracture';
+import type { VehicleRef } from '../vehicle';
+import type { GroomRef } from '../groom';
 import { gameInstance, own } from './world';
 
 export interface ContentObject {
@@ -22,6 +24,7 @@ export interface ContentAsset {
   build: number;
   meshes: string[];
   skeletalMeshes: string[];
+  grooms: string[];
   animations: string[];
   sounds: string[];
   objects: ContentObject[];
@@ -63,6 +66,8 @@ interface Manifest {
   compute?: Record<string, ContentTerrain>;
   pcg?: Record<string, ContentTerrain>;
   fracture?: Record<string, ContentTerrain>;
+  vehicle?: Record<string, ContentTerrain>;
+  groom?: Record<string, ContentTerrain>;
   packs: Record<string, ContentPack>;
 }
 export interface ContentClip {
@@ -93,6 +98,8 @@ interface LiveContent {
   computeListeners?: Map<string, Set<TerrainListener>>;
   pcgListeners?: Map<string, Set<TerrainListener>>;
   fractureListeners?: Map<string, Set<TerrainListener>>;
+  vehicleListeners?: Map<string, Set<TerrainListener>>;
+  groomListeners?: Map<string, Set<TerrainListener>>;
   previews?: Map<string, { importing: UE.VgeAssetPreview; objects: Map<string, UE.Object>; listed: ContentObject[] }>;
 }
 declare const __vge: { content?: LiveContent };
@@ -106,6 +113,8 @@ const motionListeners = (live.motionListeners ??= new Map());
 const computeListeners = (live.computeListeners ??= new Map());
 const pcgListeners = (live.pcgListeners ??= new Map());
 const fractureListeners = (live.fractureListeners ??= new Map());
+const vehicleListeners = (live.vehicleListeners ??= new Map());
+const groomListeners = (live.groomListeners ??= new Map());
 const previews = (live.previews ??= new Map());
 const PREVIEW_TIMEOUT_MS = 30000;
 const PREVIEW_POLL_MS = 30;
@@ -161,7 +170,7 @@ export const assetName = (ref: ContentAssetRef) =>
 
 function describe(build: number, objects: ContentObject[]): ContentAsset {
   const byClass = (cls: string) => objects.filter((o) => o.class === cls).map((o) => o.path);
-  return { build, meshes: byClass('StaticMesh'), skeletalMeshes: byClass('SkeletalMesh'), animations: byClass('AnimSequence'), sounds: byClass('SoundWave'), objects };
+  return { build, meshes: byClass('StaticMesh'), skeletalMeshes: byClass('SkeletalMesh'), grooms: byClass('GroomAsset'), animations: byClass('AnimSequence'), sounds: byClass('SoundWave'), objects };
 }
 
 export function loadContent<T extends UE.Object>(path: string): T | undefined {
@@ -235,6 +244,8 @@ function apply(manifest: Manifest | null) {
     notifyBuilt(computeListeners, manifest.compute, previous?.compute);
     notifyBuilt(pcgListeners, manifest.pcg, previous?.pcg);
     notifyBuilt(fractureListeners, manifest.fracture, previous?.fracture);
+    notifyBuilt(vehicleListeners, manifest.vehicle, previous?.vehicle);
+    notifyBuilt(groomListeners, manifest.groom, previous?.groom);
     console.log(`[content] build ${manifest.build} mounted, assets: ${Object.keys(manifest.assets).join(', ')}; packs: ${Object.keys(manifest.packs ?? {}).join(', ')}`);
   } catch (err: any) {
     console.error(`[content] applying build ${manifest?.build} failed: ${err?.stack ?? err}`);
@@ -452,6 +463,38 @@ if (import.meta.hot) {
 
 export function geometryCollectionAsset(ref: GeometryCollectionRef): GeometryCollectionRef {
   return ref;
+}
+
+export function groomAsset(ref: GroomRef): GroomRef {
+  return ref;
+}
+
+export function onGroom(ref: GroomRef, listener: TerrainListener) {
+  const now = ref.path ? { path: ref.path, build: 0 } : live.manifest?.groom?.[ref.key];
+  if (ref.path) {
+    if (now) notifyTerrain(ref.key, now, [listener]);
+    return own(() => {});
+  }
+  if (!groomListeners.has(ref.key)) groomListeners.set(ref.key, new Set());
+  groomListeners.get(ref.key)!.add(listener);
+  if (now) notifyTerrain(ref.key, now, [listener]);
+  return own(() => groomListeners.get(ref.key)?.delete(listener));
+}
+
+export function vehicleAsset(ref: VehicleRef): VehicleRef {
+  return ref;
+}
+
+export function onVehicle(ref: VehicleRef, listener: TerrainListener) {
+  const now = ref.path ? { path: ref.path, build: 0 } : live.manifest?.vehicle?.[ref.key];
+  if (ref.path) {
+    if (now) notifyTerrain(ref.key, now, [listener]);
+    return own(() => {});
+  }
+  if (!vehicleListeners.has(ref.key)) vehicleListeners.set(ref.key, new Set());
+  vehicleListeners.get(ref.key)!.add(listener);
+  if (now) notifyTerrain(ref.key, now, [listener]);
+  return own(() => vehicleListeners.get(ref.key)?.delete(listener));
 }
 
 export function onGeometryCollection(ref: GeometryCollectionRef, listener: TerrainListener) {

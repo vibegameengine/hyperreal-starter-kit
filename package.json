@@ -20,6 +20,7 @@
     "fps": "node vge/tools/fps.mjs",
     "fab": "node vge/tools/fab.mjs",
     "labs:previews": "node vge/tools/lab-previews.mjs",
+    "pack": "node vge/tools/pack.mjs",
     "test:agent-tools": "vitest run .claude/hooks",
     "clean-code:baseline": "node .claude/hooks/clean-code-baseline.mjs"
   },

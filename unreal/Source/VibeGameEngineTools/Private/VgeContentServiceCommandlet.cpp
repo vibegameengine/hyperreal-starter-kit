@@ -13,6 +13,7 @@
 #include "VgeImporter.h"
 #include "VgeMaterialBuilder.h"
 #include "VgeNiagara.h"
+#include "VgeGroom.h"
 #include "VgeObjects.h"
 #include "VgeRetargeter.h"
 #include "VgeMotionMatching.h"
@@ -182,6 +183,14 @@ namespace
 		else if (Command == TEXT("call"))
 		{
 			Result = VgeObjects::Call(Request);
+		}
+		else if (Command == TEXT("create-class"))
+		{
+			Result = VgeObjects::CreateClass(Request);
+		}
+		else if (Command == TEXT("groom-binding"))
+		{
+			Result = VgeGroom::Bind(Request);
 		}
 		else if (Command == TEXT("delete"))
 		{

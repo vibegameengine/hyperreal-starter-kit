@@ -31,5 +31,6 @@ public class VibeGameEngineTools : ModuleRules
 		// The game module's asset manager, which the cook of one build's content folders sets (VgeCookCommandlet.cpp).
 		PrivateDependencyModuleNames.Add("VibeGameEngine");
 		PrivateDependencyModuleNames.Add("ComputeFramework");
+		PrivateDependencyModuleNames.Add("HairStrandsCore");
 	}
 }

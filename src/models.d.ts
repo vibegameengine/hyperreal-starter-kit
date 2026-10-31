@@ -6,6 +6,10 @@ declare module '*.gltf' {
   const asset: import('./shared/engine/content').ContentAssetRef;
   export default asset;
 }
+declare module '*.abc' {
+  const asset: import('./shared/engine/content').ContentAssetRef;
+  export default asset;
+}
 declare module '*.fbx' {
   const asset: import('./shared/engine/content').ContentAssetRef;
   export default asset;

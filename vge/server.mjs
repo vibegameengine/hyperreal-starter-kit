@@ -24,6 +24,8 @@ import { createMotionModules, MOTION_MODULE, motionHandleModule } from './conten
 import { COMPUTE_MODULE, computeHandleModule, createComputeModules } from './content/compute.mjs';
 import { createPcgModules, PCG_MODULE, pcgHandleModule } from './content/pcg.mjs';
 import { createFractureModules, FRACTURE_MODULE, fractureHandleModule } from './content/fracture.mjs';
+import { createVehicleModules, VEHICLE_MODULE, vehicleHandleModule } from './content/vehicle.mjs';
+import { createGroomModules, GROOM_MODULE, groomHandleModule } from './content/groom.mjs';
 import { contentAssetsPlugin } from './vite/contentAssetsPlugin.mjs';
 import { devLeanTransportPlugin } from './vite/devLeanTransportPlugin.ts';
 import { materialsEnvironment, uiKitClientPlugins, unrealOptimizeDeps, unrealResolve } from './vite/environments.mjs';
@@ -205,9 +207,13 @@ function contentPlugins() {
   const describePcg = describedModules({ modules: pcg, handleModuleOf: pcgHandleModule, enqueue: pipeline.enqueuePcg, currentState: pipeline.pcgState, table: 'pcg', noun: 'PCG graphs', modelsOf: (entry) => entry.request.models });
   const fracture = createFractureModules({ materials, folderRoot: '/VgeLive/Fracture' });
   const describeFracture = describedModules({ modules: fracture, handleModuleOf: fractureHandleModule, enqueue: pipeline.enqueueFracture, currentState: pipeline.fractureState, table: 'fracture', noun: 'geometry collections', modelsOf: (entry) => entry.request.models });
+  const vehicle = createVehicleModules({ materials, folderRoot: '/VgeLive/Vehicle' });
+  const describeVehicle = describedModules({ modules: vehicle, handleModuleOf: vehicleHandleModule, enqueue: pipeline.enqueueVehicle, currentState: pipeline.vehicleState, table: 'vehicle', noun: 'vehicles', modelsOf: (entry) => entry.request.models });
+  const groom = createGroomModules({ materials, folderRoot: '/VgeLive/Groom' });
+  const describeGroom = describedModules({ modules: groom, handleModuleOf: groomHandleModule, enqueue: pipeline.enqueueGroom, currentState: pipeline.groomState, table: 'groom', noun: 'groom bindings', modelsOf: (entry) => entry.request.models });
   // An edit of a material or Niagara module, or of anything it imports: its assets are described again, built when
   // they changed, and the game reloads its handle module only when the exports themselves changed.
-  const builtTables = () => [[describeMotion, pipeline.motionState, 'motion'], [describeTerrain, pipeline.terrainState, 'terrain'], [describeNiagara, pipeline.niagaraState, 'niagara'], [describePcg, pipeline.pcgState, 'pcg'], [describeFracture, pipeline.fractureState, 'fracture']];
+  const builtTables = () => [[describeMotion, pipeline.motionState, 'motion'], [describeTerrain, pipeline.terrainState, 'terrain'], [describeNiagara, pipeline.niagaraState, 'niagara'], [describePcg, pipeline.pcgState, 'pcg'], [describeFracture, pipeline.fractureState, 'fracture'], [describeVehicle, pipeline.vehicleState, 'vehicle'], [describeGroom, pipeline.groomState, 'groom']];
   const modulesBuiltOn = (file) => {
     const target = resolve(file);
     const found = new Map();
@@ -230,6 +236,8 @@ function contentPlugins() {
       ...compute.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describeCompute })),
       ...pcg.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describePcg })),
       ...fracture.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describeFracture })),
+      ...vehicle.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describeVehicle })),
+      ...groom.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describeGroom })),
     ];
     const affected = [...graphed, ...modulesBuiltOn(file).filter((built) => !graphed.some((entry) => entry.moduleFile === built.moduleFile))];
     if (!affected.length) return;
@@ -330,6 +338,8 @@ function contentPlugins() {
     materialAssetsPlugin({ root: process.cwd(), onImport: describeCompute, pattern: COMPUTE_MODULE, name: 'vge:compute-assets' }),
     materialAssetsPlugin({ root: process.cwd(), onImport: describePcg, pattern: PCG_MODULE, name: 'vge:pcg-assets' }),
     materialAssetsPlugin({ root: process.cwd(), onImport: describeFracture, pattern: FRACTURE_MODULE, name: 'vge:fracture-assets' }),
+    materialAssetsPlugin({ root: process.cwd(), onImport: describeVehicle, pattern: VEHICLE_MODULE, name: 'vge:vehicle-assets' }),
+    materialAssetsPlugin({ root: process.cwd(), onImport: describeGroom, pattern: GROOM_MODULE, name: 'vge:groom-assets' }),
   ];
 }
 
@@ -442,6 +452,16 @@ function fabPlugin() {
           req.on('end', () => resolvePromise(JSON.parse(body || '{}')));
         });
       const secret = shellSecret();
+      server.middlewares.use('/__vge/pack', async (req, res) => {
+        if (fromAPage(req) || req.method !== 'POST') {
+          res.statusCode = 403;
+          res.end();
+          return;
+        }
+        const { name } = await readJson(req);
+        res.setHeader('content-type', 'application/json');
+        pipeline.enqueuePack(name, (err, built) => res.end(JSON.stringify(err ? { error: String(err?.message ?? err) } : { pack: name, container: built.manifest.packs[name]?.pak })));
+      });
       server.middlewares.use('/__vge/fab', async (req, res) => {
         if (fromAPage(req) && req.headers['x-vge-shell'] !== secret) {
           res.statusCode = 403;
