@@ -59,6 +59,7 @@
   "dependencies": {
     "@react-three/fiber": "^9.6.1",
     "@vibegameengine/ui-scaler": "^1.0.2",
+    "fbx2gltf": "^0.9.7-p1",
     "howler": "^2.2.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
