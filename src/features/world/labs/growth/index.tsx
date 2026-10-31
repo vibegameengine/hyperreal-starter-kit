@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { LabStage } from '../../../../scenes/lab-stage/LabStage';
 import { Player } from '../../../character/entities/Player';
-import { eveningClouds } from '../../assets/sky.material';
-import { valley } from '../../assets/valley.terrain';
+import { eveningClouds } from '../../assets/sky';
+import { valley } from '../../assets/valley';
 import { GroundTextures } from '../../entities/GroundTextures';
 import { Lake } from '../../entities/Lake';
 import { Nature } from '../../entities/Nature';

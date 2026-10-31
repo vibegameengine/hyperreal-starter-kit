@@ -4,8 +4,8 @@ import { LabStage } from '../../../../scenes/lab-stage/LabStage';
 import { loadContent, onMaterial } from '../../../../shared/engine/content';
 import { world } from '../../../../shared/engine/world';
 import { useCompute, useFrame } from '../../../../shared/react';
-import { probe, PROBE_SIZE } from '../../assets/probe.compute';
-import { probeScreen } from '../../assets/probe.material';
+import { probe, PROBE_SIZE } from '../../assets/probe';
+import { probeScreen } from '../../assets/probeScreen';
 
 const PLANE = '/Engine/BasicShapes/Plane.Plane';
 

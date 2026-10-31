@@ -74,14 +74,15 @@ src/
   release.ts          # release entry (`npm run build` -> unreal/Content/JavaScript/vge/game.js): globals, then the program
   app/
     program.ts        # the program: UI host, then the scene named by -Scene= (default main)
-    scenes.ts         # scene router: "main" + every lab from the glob registry; openScene()
+    scenes.ts         # scene router: "main" + every lab from LABS in labs.ts (dev only); openScene()
+    labs.ts           # LABS: one defineLab entry per lab, whose load imports features/<slice>/labs/<id>
     ui-host.ts        # game side of the HUD page (shows src/ui/hud.html through UVgeUI)
     debug-seam.ts     # expression evaluation for agents (tools/game.mjs)
   scenes/
     main/             # the main scene: the composition root, deep-imports feature entities
     lab-stage/        # the shared stage every lab mounts (sun, sky, ground, camera)
   features/
-    <slice>/          # a vertical slice: entities/ labs/<id>/ ui/<id>.lab.ts assets/ + optional index.ts
+    <slice>/          # a vertical slice: entities/ labs/<id>/ assets/ + optional index.ts
   shared/
     engine/           # world.ts (scopes, spawn helpers, viewFrom), content.ts (content builds)
     lib/              # cross-feature primitives; devLab.ts (the lab contract)
@@ -89,8 +90,17 @@ src/ui/               # HTML/CSS UI (React): a game's HUD (hud.html, hud.tsx, br
                       # and the dev shell's page (main.tsx, App.tsx, app/, features/, shell/, shared/)
 ```
 
-`features/<slice>/ui/` holds **lab manifests** (`<id>.lab.ts`), not screens: the
-web kit's screens are the HTML UI in `src/ui` here.
+A slice has no screens: the web kit's screens are the HTML UI in `src/ui` here.
+Labs are registered in one list, `LABS` in `app/labs.ts`, not by files in the
+slice.
+
+Content modules under `assets/` have plain names (`lava.tsx`, `forest.ts`,
+`car.ts`), never a kind postfix. A module's kind is known from its code: it calls
+a define function imported from `src/shared/<kind>` (`defineMaterial`/
+`defineInstance` → material, `defineSystem` → niagara, `defineTerrain`,
+`defineMotionMatching`, `defineCompute`, `defineGraph` → pcg, `defineFracture`,
+`defineVehicle`, `defineGroom`), detected by `vge/content/contentKind.mjs`. No
+file name or folder decides anything.
 
 **Dependency direction (never violate):** `app → scenes → features → shared`.
 `shared/` imports nothing above it. Scenes may deep-import feature entities (they
@@ -106,8 +116,8 @@ mounted by labs (`dev-lab-authoring`); nothing else in a feature imports a scene
 | A thing that exists in the world (character, prop, building) | `features/<slice>/entities/x.ts` | A `mountX(...)` that spawns through `world.ts` and returns its handle. |
 | Per-frame behaviour (spin, follow, health drain) | inside the entity; `features/<slice>/components/` once reused; `shared/lib/` for 2+ features | Attached with `everyFrame` / `every`; takes the actor it drives. |
 | Pure game/math logic (layout, damage, pathing) | `features/<slice>/systems/x.ts`, or `shared/lib/` if generic | No `ue`, no `puerts`. **This is the layer you unit-test.** |
-| An isolated inspection scene | `features/<slice>/ui/<id>.lab.ts` + `features/<slice>/labs/<id>/index.ts` | Registered by the glob; see `dev-lab-authoring`. |
-| A playable scene | `scenes/<name>/index.ts` (default export builds it) + an entry in the `scenes` list in `app/scenes.ts` | Only `main` is listed by hand today; labs come from the glob. |
+| An isolated inspection scene | `features/<slice>/labs/<id>/index.ts` + one `defineLab` entry in `LABS` in `app/labs.ts` + its preview import in `src/ui/app/labs/previews.ts` | See `dev-lab-authoring`. |
+| A playable scene | `scenes/<name>/index.ts` (default export builds it) + an entry in `loadScene` in `app/scenes.ts` | `main` and `world` are listed there; labs come from `LABS` in `app/labs.ts`. |
 | An engine-facing helper every layer needs | `shared/engine/` | Spawning, scopes, content, views. |
 | A primitive used by ≥2 features | `shared/lib/` | Only promote once a second consumer exists. |
 | An in-game HUD element | the HUD page, `src/ui/hud.tsx` (empty today), composed from `src/ui/features/ui-kit` primitives | Hears the game through `onGameMessage`, acts through `post()` (`src/ui/bridge.ts` ↔ `UVgeUI`); elements that take the mouse carry `data-hit`. The game side is `app/ui-host.ts`, which handles no message yet. |
@@ -128,7 +138,7 @@ mounted by labs (`dev-lab-authoring`); nothing else in a feature imports a scene
   (`../../entities/flightCase`).
 - **Barrels (`index.ts`) are minimal** — they re-export only what another layer
   consumes (today: the entity mount functions and their handle types). Never
-  re-export a lab body or a lab manifest from a barrel (`dev-lab-authoring`
+  re-export a lab body from a barrel (`dev-lab-authoring`
   rule 1).
 
 ## Adding a new feature (recipe)

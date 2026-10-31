@@ -108,12 +108,12 @@ role.
   scene from nothing — React state, physics, player position, camera all lost):
   1. An edit of any module that is not a refresh boundary and whose importer chain
      reaches `src/main.ts` without one: everything in `src/app/` (`scenes.ts`,
+     `labs.ts` — the list of labs, imported by `loadLab` in `scenes.ts` —
      `program.ts`, `ui-host.ts`, `debug-seam.ts`), `src/shared/engine/*.ts`
      (`world.ts` is imported by `scenes.ts`), `src/shared/react/*.ts` (the
      renderer itself, `apply.ts`, `anim.ts`, `materials.ts`, `hooks.ts`, reached
-     through `shared/react/index.ts` from `scenes.ts`), `src/shared/lib/devLab.ts`,
-     and every lab manifest `features/*/ui/*.lab.ts` (imported by
-     `import.meta.glob` in `scenes.ts:8`).
+     through `shared/react/index.ts` from `scenes.ts`), and
+     `src/shared/lib/devLab.ts`.
   2. A component module whose exports stop being refresh-compatible
      (`refresh-runtime.js:630-675`: an export added or removed, or a non-component
      export with a new identity). It invalidates and the update moves to its
@@ -634,7 +634,8 @@ an object-literal slot; a missing key is added to it.
   only grows, `VgeInstancePool.cpp`). A slider scrub makes dozens. This is a leak
   of today's hot reload as well — any saved colour change adds one — and is fixed
   where it lives: the caches and the pool release what no node uses.
-- A material module (`*.material.ts`, built by the content pipeline,
+- A material module (a module that calls `defineMaterial`/`defineInstance`,
+  detected by `vge/content/contentKind.mjs` and built by the content pipeline,
   `vge/server.mjs:96-123`) is edited in its own file by the same writer; a change
   of its description is cooked as today and arrives through `vge:content`.
 
@@ -664,11 +665,11 @@ hot-swap themselves.
    module's old listeners (`module-runner.js:389-398`), so plain re-registration
    is correct. These are edits of the kit, not of a game, and are rare in a game
    session.
-3. **Data-only modules that sit on the reload path stop being on it.** Lab
-   manifests (`*.lab.ts`, found by `import.meta.glob` in `scenes.ts:8`) are read
-   from the shell's lab index and loaded by id; an edit of one lab's manifest
+3. **Data-only modules that sit on the reload path stop being on it.** The lab
+   list (`LABS` in `src/app/labs.ts`, imported by `loadLab` in `scenes.ts`) is
+   read from the shell's lab index and loaded by id; an edit of one lab's entry
    need not reach `scenes.ts`. How to cut that import edge is decided in the
-   code, with the manifests' importers listed first.
+   code, with the list's importers listed first.
 4. **Render errors stay local.** The scene root renders each top-level child under
    an error boundary; a failing component renders nothing and logs, the rest of
    the scene keeps running, and the next refresh retries it.
@@ -818,7 +819,7 @@ Every prop of the component is there; nothing has to be registered for it.
   precision, click to type, Enter, Escape. A vector of 2-4 numbers is a row of
   such fields, a boolean a toggle, `options` a choice, a string a text field. A
   plain object is a group of its entries.
-- **Dictionary keys.** `keys` on an `argType` (a list, or a function of `{ props, object }`) names every entry the card shows for a dictionary prop, written or not; an entry without its own value shows `template` (also a function of `{ props, object }`), which for `TripoGirl` is the clip-wide `armSpace` / `legSpace`, so each row shows the value that applies. `TripoGirl` lists the clips of its built PoseSearch databases (`useDatabaseClipNames`, `entities/motionClip.ts`): a `*.motion.ts` module reaches the game only as its `defineMotionMatching` exports, so a clip list exported beside them does not.
+- **Dictionary keys.** `keys` on an `argType` (a list, or a function of `{ props, object }`) names every entry the card shows for a dictionary prop, written or not; an entry without its own value shows `template` (also a function of `{ props, object }`), which for `TripoGirl` is the clip-wide `armSpace` / `legSpace`, so each row shows the value that applies. `TripoGirl` lists the clips of its built PoseSearch databases (`useDatabaseClipNames`, `entities/motionClip.ts`): a motion-matching module (one that calls `defineMotionMatching`) reaches the game only as its `defineMotionMatching` exports, so a clip list exported beside them does not.
 - **Live key.** A prop whose value is a dictionary can name the entry that
   matters now: `liveKey: ({ props, object }) => string | undefined` on its
   `argType`, called every frame with the component's props and the selected
@@ -925,7 +926,7 @@ own, as a game would:
   into its own instance group, and the capture shows only the instance
   components whose stencil is the one asked for.
 - An unbound post-process volume spawned for edit mode blends a dynamic instance
-  of `outline.material.tsx` with the two targets as `selectedDepth` and
+  of `outline.tsx` with the two targets as `selectedDepth` and
   `activeDepth`, after tonemapping, one texel of the target per output pixel
   (`PostProcessInput0`'s `InvSize`). A pixel holds the active object where its
   depth is captured and not behind the selection's, otherwise the selection
@@ -983,9 +984,9 @@ volume blended `MID_Outline` of
   - `propPlan.ts` — which prop at which level receives a delta, fixed at the
     start of a drag; preview, revert, commit.
   - `TransformGizmo.tsx`, `gizmoParts.ts`, `gizmoView.ts`, `gizmoMath.ts`,
-    `gizmo.material.tsx` — the gizmo's parts, sizes and colours from Blender's
+    `gizmo.tsx` — the gizmo's parts, sizes and colours from Blender's
     source (75 px, 2 px lines, `#ff3352` / `#8bdc00` / `#2890ff`).
-  - `selectionLook.ts`, `outline.material.tsx` — the outline.
+  - `selectionLook.ts`, `outline.tsx` — the outline.
   - `picking.ts`, `devtools.ts`, `channel.ts`, `editState.ts`.
 - Server side: `vge/edit/` — `plugin.mjs` (operations `inspect`, `commit`,
   `undo`, `redo`, `stats`, replies to the asking game with `client.send`),

@@ -51,7 +51,28 @@ export function contentSpec(root, file, query) {
     const source = character(from, file);
     return { key: `${keyOf(file)}?retargetFrom=${source.character ?? source.model}`, file, kind: 'retargetFrom', model: keyOf(file), from: source };
   }
-  return { key: keyOf(file), file, kind: 'model' };
+  const settings = modelSettings(params, (path) => keyOf(resolve(dirname(file), path)));
+  return { key: settings.query ? `${keyOf(file)}?${settings.query}` : keyOf(file), file, kind: 'model', mesh: settings.mesh, cloth: settings.cloth };
+}
+
+function modelSettings(params, keyOfPath) {
+  const mesh = {};
+  const parts = [];
+  if (params.get('nanite') === 'off') {
+    mesh.nanite = false;
+    parts.push('nanite=off');
+  }
+  const lods = params.get('lods');
+  if (lods) {
+    mesh.lods = lods.split(',').map((lod) => {
+      const [triangles, screenSize] = lod.split('@').map(Number);
+      return { triangles, screenSize };
+    });
+    parts.push(`lods=${lods}`);
+  }
+  const cloth = params.get('cloth') ? keyOfPath(params.get('cloth')) : undefined;
+  if (cloth) parts.push(`cloth=${cloth}`);
+  return { query: parts.join('&'), mesh: Object.keys(mesh).length ? mesh : undefined, cloth };
 }
 
 // The model files an import needs built first.

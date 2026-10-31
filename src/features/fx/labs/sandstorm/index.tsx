@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { colored } from '../../../../shared/engine/world';
 import { LabStage } from '../../../../scenes/lab-stage/LabStage';
 import { NiagaraSystem, useHudMessages, useHudState } from '../../../../shared/react';
-import { sandstorm } from '../../assets/sandstorm.niagara';
+import { sandstorm } from '../../assets/sandstorm';
 import { SANDSTORM_DENSITY, SANDSTORM_WIND } from '../../assets/sandstormDefaults';
 
 const RESOLUTIONS = [96, 128, 192, 256];

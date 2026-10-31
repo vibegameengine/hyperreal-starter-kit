@@ -9,7 +9,7 @@ import rockFlatModel from '../assets/nature/rock-flat.glb';
 import rockModel from '../assets/nature/rock.glb';
 import treeTallModel from '../assets/nature/tree-tall.glb';
 import treeModel from '../assets/nature/tree.glb';
-import { bark, leaves, stone } from '../assets/nature/nature.material';
+import { bark, leaves, stone } from '../assets/nature/nature';
 import { lakeShore, PATH_WIDTH, pathOffset, VALLEY_HALF_SIZE, valleyHeight, valleySlope } from '../assets/valleyShape';
 
 interface Placement {

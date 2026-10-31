@@ -7,6 +7,7 @@
 //      plus /Game/Vge/Imported (Config/DefaultGame.ini), so a model nothing imports is not in the game.
 //   3. The imported content, the bundle and the UI page are removed again, so a dev package never has them.
 // This kit's dev server must be stopped: the build runs a content service of its own on this kit's project content.
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import react from '@vitejs/plugin-react';
@@ -29,7 +30,6 @@ import { materialAssetsPlugin } from '../vite/materialAssetsPlugin.mjs';
 import { reactCompilerPlugin } from '../vite/reactCompiler.mjs';
 import { prepareSound } from '../content/sound.mjs';
 import { clothOf } from '../content/cloth.mjs';
-import { meshSettingsOf } from '../content/meshSettings.mjs';
 import { engine, project, repoRoot, runtimeDir, unrealRoot } from './engine.mjs';
 import { ensureShipping } from './runtime.mjs';
 import { refuseWhileOwnDevServerRuns, step } from './steps.mjs';
@@ -77,20 +77,24 @@ const destOf = (key) => [IMPORTED, ...dirname(key).split('/').filter((part) => p
 // only the objects it replaced (no Skeleton), and the clips built on it would have no skeleton to go on.
 const importing = new Map();
 const importedModels = new Map();
-function importModel(file, key) {
+function importModel(modelKey) {
+  const spec = specOfModelKey(devDir, modelKey);
+  const key = spec.key;
   if (!importing.has(key)) {
     importing.set(key, (async () => {
-      const decoded = await decode(file, join(workDir, key.replace(/\.[^.]+$/, '.glb')));
-      const cloth = clothOf(file);
-      const meshSettings = meshSettingsOf(file);
-      const result = await service.call('import', { source: decoded.file, dest: destOf(key), ...(cloth ? { cloth: cloth.description } : {}), ...(meshSettings ? { mesh: meshSettings.description } : {}) });
-      console.log(`[${TAG}] ${key} -> ${destOf(key)} (${result.objects.length} objects)`);
+      const path = key.replace(/\?.*$/, '');
+      const settingsTag = key.includes('?') ? `_${createHash('sha1').update(key).digest('hex').slice(0, 6)}` : '';
+      const dest = `${destOf(path)}${settingsTag}`;
+      const decoded = await decode(spec.file, join(workDir, `${path.replace(/\.[^.]+$/, '')}${settingsTag}.glb`));
+      const cloth = clothOf(devDir, spec);
+      const result = await service.call('import', { source: decoded.file, dest, ...(cloth ? { cloth: cloth.description } : {}), ...(spec.mesh ? { mesh: spec.mesh } : {}) });
+      console.log(`[${TAG}] ${key} -> ${dest} (${result.objects.length} objects)`);
       imported.push(key);
       importedModels.set(key, result.objects);
       return result.objects;
     })());
   }
-  return importing.get(key);
+  return importing.get(key).then((objects) => (importedModels.set(modelKey, objects), objects));
 }
 
 async function importSound(spec) {
@@ -170,7 +174,7 @@ async function buildTerrainModule(file, key) {
       await service.call(asset.kind === 'instance' ? 'material-instance' : 'material', asset.request);
       builtMaterials.add(asset.path);
     }
-    for (const grass of entry.request.grass ?? []) await importModel(join(devDir, grass.model), grass.model);
+    for (const grass of entry.request.grass ?? []) await importModel(grass.model);
     await buildTerrainLevel(service, entry, { objectsOf: (model) => importedModels.get(model) });
     console.log(`[${TAG}] ${key} -> ${entry.path}`);
     paths[entry.exportKey] = entry.path;
@@ -183,9 +187,9 @@ async function buildTerrainModule(file, key) {
 const importedSpecs = new Map();
 async function importContent(spec) {
   if (importedSpecs.has(spec.key)) return importedSpecs.get(spec.key);
-  for (const model of modelsOf(spec)) await importModel(join(devDir, model), model);
+  for (const model of modelsOf(spec)) await importModel(model);
   if (spec.kind === 'sound') return importSound(spec);
-  if (spec.kind === 'model') return importModel(spec.file, spec.key);
+  if (spec.kind === 'model') return importModel(spec.key);
   const dest = `${destOf(spec.key.replace(/\?.*$/, ''))}_${spec.kind === 'clips' ? (spec.retarget ? `On_${spec.retarget.character ?? assetName(spec.retarget.model)}` : 'Clips') : `From_${spec.from.character ?? assetName(spec.from.model)}`}`;
   const objects = await importSpec(service, spec, dest, { modelObjects: (key) => importedModels.get(key) });
   console.log(`[${TAG}] ${spec.key} -> ${dest} (${objects.length} objects)`);
@@ -227,7 +231,7 @@ async function buildPcgModule(file, key) {
   const exports = await pcgModules.describe(file);
   const paths = {};
   for (const entry of exports) {
-    for (const model of entry.request.models) await importModel(join(devDir, model), model);
+    for (const model of entry.request.models) await importModel(model);
     const built = await buildPcgGraph(service, entry, { objectsOf: (model) => importedModels.get(model) });
     console.log(`[${TAG}] ${key} -> ${built.path}`);
     paths[entry.exportKey] = built.path;
@@ -241,7 +245,7 @@ async function buildFractureModule(file, key) {
   const exports = await fractureModules.describe(file);
   const paths = {};
   for (const entry of exports) {
-    for (const model of entry.request.models) await importModel(join(devDir, model), model);
+    for (const model of entry.request.models) await importModel(model);
     const built = await buildFracture(service, entry, { objectsOf: (model) => importedModels.get(model) });
     console.log(`[${TAG}] ${key} -> ${built.path}`);
     paths[entry.exportKey] = built.path;
@@ -257,7 +261,7 @@ async function buildVehicleModule(file, key) {
   const objects = {};
   for (const entry of exports) {
     for (const model of entry.request.models) {
-      await importModel(join(devDir, model), model);
+      await importModel(model);
       objects[model] = importedModels.get(model);
     }
     const built = await buildVehicle(service, entry);
@@ -275,7 +279,7 @@ async function buildGroomModule(file, key) {
   const objects = {};
   for (const entry of exports) {
     for (const model of entry.request.models) {
-      await importModel(join(devDir, model), model);
+      await importModel(model);
       objects[model] = importedModels.get(model);
     }
     const built = await buildGroomBinding(service, entry, { objectsOf: (model) => importedModels.get(model) });

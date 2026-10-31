@@ -1,10 +1,12 @@
-// Material modules (`*.material.tsx`, src/shared/material): evaluated in Node in a Vite environment of their own
-// (`materials`, a runnable server environment: the game never runs them), described as content service requests by
-// src/shared/material/describe.ts, and turned into the handle module the game imports in their place.
+// Material modules (modules that call defineMaterial or defineInstance from src/shared/material): evaluated in Node in
+// a Vite environment of their own (`materials`, a runnable server environment: the game never runs them), described
+// as content service requests by src/shared/material/describe.ts, and turned into the handle module the game imports
+// in their place.
 import { relative } from 'node:path';
+import { contentModule } from './contentKind.mjs';
 import { createModuleGraph } from './moduleGraph.mjs';
 
-export const MATERIAL_MODULE = /\.material\.[jt]sx$/;
+export const MATERIAL_MODULE = contentModule('material');
 const DESCRIBE = '/src/shared/material/describe.ts';
 const CONTENT_MODULE = '/src/shared/engine/content.ts';
 

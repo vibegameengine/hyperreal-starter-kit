@@ -8,6 +8,8 @@
 #include "HAL/Runnable.h"
 #include "HAL/RunnableThread.h"
 #include "Misc/CoreDelegates.h"
+#include "PackageTools.h"
+#include "UObject/UObjectIterator.h"
 #include "VgeComputeBuilder.h"
 #include "VgeFab.h"
 #include "VgeImporter.h"
@@ -207,6 +209,27 @@ namespace
 		}
 		return Result;
 	}
+
+	void UnloadSavedLivePackages()
+	{
+		TArray<UPackage*> Saved;
+		for (TObjectIterator<UPackage> It; It; ++It)
+		{
+			UPackage* Package = *It;
+			if (!Package->IsDirty() && Package->GetName().StartsWith(TEXT("/VgeLive/")))
+			{
+				Saved.Add(Package);
+			}
+		}
+		if (Saved.Num() > 0)
+		{
+			FText Error;
+			if (!UPackageTools::UnloadPackages(Saved, Error, /*bUnloadDirtyPackages*/ false) && !Error.IsEmpty())
+			{
+				UE_LOGF(LogVgeService, Warning, "Unloading saved packages: %ls", *Error.ToString());
+			}
+		}
+	}
 }
 
 int32 UVgeContentServiceCommandlet::Main(const FString& Params)
@@ -258,6 +281,7 @@ int32 UVgeContentServiceCommandlet::Main(const FString& Params)
 				continue;
 			}
 			const TSharedRef<FJsonObject> Result = Handle(Request);
+			UnloadSavedLivePackages();
 			CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
 			Answer(Result);
 		}

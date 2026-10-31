@@ -4,8 +4,8 @@ import { useEffect, useRef } from 'react';
 import { useSkeletalMesh } from '../../../character/entities/ImportedCharacter';
 import { MANNEQUIN_MESHES, mannequinClips } from '../../../character/entities/mannequin';
 import { useFrame } from '../../../../shared/react';
-import capeModel from '../../assets/cloth/cape.glb';
-import { capeFabric } from '../../assets/cloth/fabric.material';
+import capeModel from '../../assets/cloth/cape.glb?cloth=./capeCloth.json';
+import { capeFabric } from '../../assets/cloth/fabric';
 
 const CENTRE: readonly [number, number] = [-350, 0];
 const RADIUS_CM = 240;

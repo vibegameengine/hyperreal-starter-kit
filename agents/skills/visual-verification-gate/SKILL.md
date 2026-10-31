@@ -68,7 +68,7 @@ The baseline prevents accidental regressions and makes before/after evidence mea
 
 For a redesign or new visual element:
 
-1. Use an existing lab (`src/features/*/ui/*.lab.ts`).
+1. Use an existing lab (listed in `LABS` in `src/app/labs.ts`).
 2. If none exists, create the smallest production-representative lab before integrating the feature (`dev-lab-authoring`).
 3. Render real entities, assets, materials, effects, and state logic; do not approve a disconnected mock.
 4. Exercise all relevant states and boundary content.

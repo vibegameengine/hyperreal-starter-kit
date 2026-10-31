@@ -1,13 +1,13 @@
-// Material modules (`*.material.tsx`) are assets of the game code, as model files are: the game imports a handle per
-// export in their place (content/materials.mjs handleModule), and a material reaches the game only when code
-// imports its module.
-//   import lava from '../assets/lava.material';
+// Material modules (modules that call defineMaterial, found by content/contentKind.mjs from their code) are assets of
+// the game code, as model files are: the game imports a handle per export in their place (content/materials.mjs
+// handleModule), and a material reaches the game only when code imports its module.
+//   import lava from '../assets/lava';
 //   <staticMeshComponent overrideMaterials={[lava]} />
 // `onImport(file, key)` runs when the game code first loads the module and returns the handle module's code (the dev
 // server describes it and starts its build; the release build builds it and bakes in the paths). Edits are taken by
 // the dev server's own watcher (server.mjs), since a material module also depends on what it imports.
-// Niagara modules (`*.niagara.ts`, content/niagara.mjs) are the same kind of asset and use this plugin with their own
-// `pattern` and `name`.
+// Niagara, terrain, vehicle and the other content modules are the same kind of asset and use this plugin with their
+// own `pattern` (content/contentKind.mjs contentModule) and `name`.
 import { relative } from 'node:path';
 import { MATERIAL_MODULE } from '../content/materials.mjs';
 

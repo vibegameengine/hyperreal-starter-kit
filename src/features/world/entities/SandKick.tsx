@@ -4,7 +4,7 @@ import { useRef } from 'react';
 import { world } from '../../../shared/engine/world';
 import { NiagaraSystem, useFrame } from '../../../shared/react';
 import { coastHeight, SEA_LEVEL, sandiness } from '../assets/coastShape';
-import { sandKick } from '../assets/sand/sandKick.niagara';
+import { sandKick } from '../assets/sand/sandKick';
 
 const GRAINS_PER_CM = 3;
 const MAX_RATE = 900;

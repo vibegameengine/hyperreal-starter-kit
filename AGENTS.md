@@ -28,7 +28,7 @@ from the code, unable to do it:
 | Layer | Where | What belongs here |
 |---|---|---|
 | 1. Game TypeScript and React | `src/features/<game>`, `src/ui` | Scenes, mechanics, rules, AI, input, camera, UI on the HUD page, labs, per-frame visuals (instanced meshes moved every frame for rain, dust, debris), anything the engine exposes to reflection: every class, function and property in `unreal/Typing/ue/ue.d.ts`, every component and actor class as a JSX element (`unreal/Typing/ue/ue-jsx.d.ts`). The labs show how; start from them. |
-| 2. Assets and the content pipeline | the source files (Blender, any DCC), `vge/content`, `vge/vite` | A wrong scale, skeleton, animation unit, pivot or material in an imported file: fixed in the file or in the import step. A new kind of content (a material, a particle effect, a sound): created and cooked by the content service in the editor process and mounted as DLC, the way materials from TSX are (`*.material.tsx`, `VgeMaterialBuilder`), never assembled inside the running game. |
+| 2. Assets and the content pipeline | the source files (Blender, any DCC), `vge/content`, `vge/vite` | A wrong scale, skeleton, animation unit, pivot or material in an imported file: fixed in the file or in the import step. A new kind of content (a material, a particle effect, a sound): created and cooked by the content service in the editor process and mounted as DLC, the way materials from TSX are (a module calling `defineMaterial` from `src/shared/material`, `VgeMaterialBuilder`), never assembled inside the running game. |
 | 3. The kit's shared TypeScript and tools | `src/shared`, `vge/tools`, `vge/server.mjs` | A wrapper every game would need, or a bug in a kit tool. Portable, kept out of game code. |
 | 4. The kit's C++ | `Source/` (content-service tools in `VibeGameEngineTools`, the game runtime in `VibeGameEngine`), built in a profile | Only what layers 1-3 cannot reach, shown in the code: which function or data is not exposed to reflection, or which engine path needs native code. Every C++ change rebuilds the runtime for every kit on the machine: **agree it with the user before writing it.** |
 
@@ -119,9 +119,9 @@ and the animation units were then fixed in the asset step without C++.
    `dev-lab-authoring` skill: chosen geometry, a fixed cast, the same numbers on
    every run.
 
-   **Here:** a lab is `src/features/<slice>/ui/<id>.lab.ts` (manifest only)
-   plus its body in `src/features/<slice>/labs/<id>/`, found by the glob in
-   `src/app/scenes.ts` and opened in the dev session's shell with
+   **Here:** a lab is its body in `src/features/<slice>/labs/<id>/` plus one
+   `defineLab` entry in the list `LABS` in `src/app/labs.ts`, where
+   `src/app/scenes.ts` finds it, and it is opened in the dev session's shell with
    `npm run open -- labs/<id>` (`npm run play -- --lab <id> --headless` only
    when the question is answered by numbers alone, rule 1). Its state is read
    with `node vge/tools/game.mjs --scene labs/<id> "<expr>"`.
@@ -379,6 +379,20 @@ and the animation units were then fixed in the asset step without C++.
    - Persisted artifacts are the user's channel, not the internal one: commits,
      docs, `wip/` notes, issue and PR text, and this file are written in normal
      prose because humans read them later.
+
+9. **NO TYPE POSTFIXES IN FILE NAMES.** A file is never named
+   `<name>.<kind>.ts` — no `porsche.vehicle.ts`, `miami.terrain.ts`,
+   `forest.pcg.ts`, `destruction.niagara.ts`, `sky.material.tsx`, no
+   `<id>.lab.ts`, no `<model>.mesh.json` sidecar, and no new postfix of any
+   other kind. A file is named for what it is; what kind of thing it holds is
+   said by its folder and by the code inside it. Do not add a new file with a
+   postfix, do not copy an existing postfixed file as a template, and do not
+   build tooling that finds files by such a postfix. The files that still carry
+   one are the defect being removed, not a convention to follow.
+
+   What it cost: on 2026-10-30 an agent added `porsche.vehicle.ts` because
+   `car.vehicle.ts` was there, and the owner had to stop the work to say this
+   naming is garbage and must never be written again.
 
 ## Roles
 

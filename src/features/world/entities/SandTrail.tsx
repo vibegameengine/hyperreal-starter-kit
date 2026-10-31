@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { world } from '../../../shared/engine/world';
 import { useCompute, useFrame } from '../../../shared/react';
 import { coastHeight, SEA_LEVEL } from '../assets/coastShape';
-import { sandTrail } from '../assets/sand/sandTrail.compute';
+import { sandTrail } from '../assets/sand/sandTrail';
 import { STILL_WATER_LIMIT_CM, TRAIL_RES } from '../assets/sand/sandTrailSpec';
 import type { ShoreTextures } from '../ocean/Ocean';
 import { landscapes } from './landscapes';

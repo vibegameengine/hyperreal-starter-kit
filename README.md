@@ -106,11 +106,12 @@ game updates in place.
 
 ## A material
 
-A material is a module named `*.material.tsx`: JSX describes its graph, and each export is a material asset the game
-code imports like a model file.
+A material is a module that calls `defineMaterial` or `defineInstance` from `src/shared/material`: JSX describes its
+graph, and each export is a material asset the game code imports like a model file. The module has a plain name; the
+dev server knows it is a material from that call (`vge/content/contentKind.mjs`), not from its file name or folder.
 
 ```tsx
-// src/features/materials/assets/lava.material.tsx, shortened
+// src/features/materials/assets/lava.tsx, shortened
 import { defineInstance, defineMaterial, param } from '../../../shared/material';
 
 const glowColor = param('glowColor', [1, 0.32, 0.04]);
@@ -130,7 +131,7 @@ export const cooled = defineInstance(lava, { glowStrength: 1.5 });
 
 ```tsx
 // a scene
-import lava, { cooled } from '../../assets/lava.material';
+import lava, { cooled } from '../../assets/lava';
 import { instance } from '../../../../shared/material';
 
 <staticMeshComponent staticMesh={CUBE} overrideMaterials={[lava]} />
@@ -262,7 +263,7 @@ package.json  tsconfig.json   commands run from here
   cook and packaging are the stock DLC steps BuildCookRun runs; each build gets its own container.
   `decode.mjs` is the glTF rewrite both the pipeline and the release build use.
 - `vge/content/materials.mjs`, `vge/vite/materialAssetsPlugin.mjs`, `src/shared/material` - material modules
-  (`*.material.tsx`, [A material](#a-material)): evaluated in the dev server's `materials` environment, described as
+  (modules that call `defineMaterial`/`defineInstance`, [A material](#a-material)): evaluated in the dev server's `materials` environment, described as
   content service requests, imported by the game as handles; `src/shared/react/materials.ts` puts them into
   material props.
 - `vge/vite/contentAssetsPlugin.mjs` - model files (`.glb`, `.gltf`, `.fbx`) as modules: the default export
@@ -289,8 +290,9 @@ package.json  tsconfig.json   commands run from here
     (`UVgeInstancePool`, always an ISM: HISM does not render instances added by stable id), one instance
     per element. A scene module
     that exports `Scene` (a React component) is rendered; edits apply with React Fast Refresh.
-  - `shared/lib/devLab.ts` - the lab contract: `features/<slice>/ui/<id>.lab.ts` exports only its
-    manifest, the body lives in `features/<slice>/labs/<id>/`; `app/scenes.ts` finds labs by glob.
+  - `shared/lib/devLab.ts` - the lab contract (`defineLab`); `app/labs.ts` lists every lab as one `defineLab`
+    entry whose `load` imports its body from `features/<slice>/labs/<id>/`; `app/scenes.ts` finds a lab in
+    that list (dev only).
   - `scenes/main` - the main scene; `scenes/lab-stage` - the shared stage labs mount (sun, sky,
     collidable ground, camera).
   - `features/demo`, `features/character` (the stock Mannequin, modular skeletal characters from content,

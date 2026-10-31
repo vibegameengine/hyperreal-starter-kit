@@ -2,7 +2,7 @@ import * as UE from 'ue';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { LabStage } from '../../../../scenes/lab-stage/LabStage';
 import { useMotionMatchingClass } from '../../../../shared/react';
-import { mannyMotion } from '../../assets/manny.motion';
+import { mannyMotion } from '../../assets/mannyMotion';
 import { MANNY_SITUATIONS } from '../../assets/mannySituations';
 import { ImportedCharacter } from '../../entities/ImportedCharacter';
 import { MANNEQUIN_MESHES } from '../../entities/mannequin';

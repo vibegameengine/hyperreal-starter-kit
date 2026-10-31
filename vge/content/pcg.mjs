@@ -1,4 +1,6 @@
-export const PCG_MODULE = /\.pcg\.[jt]sx?$/;
+import { contentModule } from './contentKind.mjs';
+
+export const PCG_MODULE = contentModule('pcg');
 const DESCRIBE = '/src/shared/pcg/describe.ts';
 const CONTENT_MODULE = '/src/shared/engine/content.ts';
 

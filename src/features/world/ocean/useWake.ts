@@ -2,7 +2,7 @@ import * as UE from 'ue';
 import { useEffect, useMemo, useRef } from 'react';
 import { world } from '../../../shared/engine/world';
 import { useCompute, useFrame } from '../../../shared/react';
-import { oceanWakeColumns, oceanWakeInverse, oceanWakeRows } from '../assets/ocean/wake.compute';
+import { oceanWakeColumns, oceanWakeInverse, oceanWakeRows } from '../assets/ocean/oceanWake';
 import { WAKE_CELL, WAKE_RES } from '../assets/ocean/wakeSpec';
 import { groundAt } from './breakerStations';
 import type { ShoreTextures } from './Ocean';

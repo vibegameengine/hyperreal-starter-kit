@@ -1,9 +1,9 @@
 import { LabStage } from '../lab-stage/LabStage';
 import { Player } from '../../features/character/entities/Player';
 import { Coast } from '../../features/world/entities/Coast';
-import { coast } from '../../features/world/assets/coast.terrain';
+import { coast } from '../../features/world/assets/coast';
 import { coastHeight, LAGOON } from '../../features/world/assets/coastShape';
-import { eveningClouds } from '../../features/world/assets/sky.material';
+import { eveningClouds } from '../../features/world/assets/sky';
 import { Clouds, Terrain } from '../../shared/react';
 
 const START: [number, number] = [LAGOON.x, LAGOON.y + LAGOON.radiusY + 1800];

@@ -1,19 +1,24 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const HOOK = join(import.meta.dirname, 'lab-previews-guard.mjs')
+const REGISTRY = join(import.meta.dirname, '..', '..', 'vge', 'tools', 'lab-registry.mjs')
 const roots = []
 
 function kit(labs, previews) {
   const root = mkdtempSync(join(tmpdir(), 'lab-previews-'))
   roots.push(root)
-  mkdirSync(join(root, 'src', 'features', 'world', 'ui'), { recursive: true })
-  mkdirSync(join(root, 'src', 'ui', 'app', 'ui', 'labs', 'previews'), { recursive: true })
-  for (const id of labs) writeFileSync(join(root, 'src', 'features', 'world', 'ui', `${id}.lab.ts`), 'export default {}')
-  for (const id of previews) writeFileSync(join(root, 'src', 'ui', 'app', 'ui', 'labs', 'previews', `${id}.webp`), '')
+  mkdirSync(join(root, 'src', 'app'), { recursive: true })
+  mkdirSync(join(root, 'src', 'ui', 'app', 'labs'), { recursive: true })
+  mkdirSync(join(root, 'vge', 'tools'), { recursive: true })
+  copyFileSync(REGISTRY, join(root, 'vge', 'tools', 'lab-registry.mjs'))
+  const labEntries = labs.map((id) => `  defineLab({\n    id: '${id}',\n    title: '${id}',\n  }),`).join('\n')
+  writeFileSync(join(root, 'src', 'app', 'labs.ts'), `export const LABS = [\n${labEntries}\n];\n`)
+  const previewEntries = previews.map((id) => `  '${id}': url,`).join('\n')
+  writeFileSync(join(root, 'src', 'ui', 'app', 'labs', 'previews.ts'), `export const LAB_PREVIEWS = {\n${previewEntries}\n}\n`)
   return root
 }
 

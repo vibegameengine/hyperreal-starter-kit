@@ -38,14 +38,9 @@ number, so it can be checked on every clip.
    the source's.
    - A pendulum loop (cycle 1 leans to one side, cycle 2 mirrors it) is checked per loop instead: the lean averages to
      0 and the cycles are symmetric.
-8. **Metadata, one sidecar JSON per clip** (`<clip>.fbx.json`):
-   - `kind`: loop, start, stop, pivot or turn;
-   - `gait`: walk or jog;
-   - `direction`: deg, for starts, pivots and turns;
-   - `speed`: cm/s of the root on loops;
-   - `cycles`: on loops.
-
-   The kit builds its databases and sets the capsule gait speeds from this, not from hand-typed numbers.
+8. **No metadata files.** A clip ships as its animation file alone, with no sidecar JSON beside it. Whether it is a
+   loop, its root speed and its contacts are computed by the kit from the clip itself; nothing reads a file next to
+   the clip.
 
 ## Kit side (import, `vge/content` and the content service)
 
@@ -60,7 +55,8 @@ number, so it can be checked on every clip.
     - Why: in Graph mode it measures speed with the root motion delta of the graph. The kit's capsule drives the
       character, so no root motion reaches the graph, a planted foot reads as running backwards, it never plants, and
       the feet are lifted 2.6 cm.
-12. **Databases of one `.motion.ts` share one normalization set** with `NormalizeWithCommonSchema`, so costs compare
+12. **Databases of one motion-matching module (`mannyMotion.ts`, any module that calls `defineMotionMatching`) share
+    one normalization set** with `NormalizeWithCommonSchema`, so costs compare
     across idle, starts, loops, stops and pivots.
     - Continuing-pose bias: loops, starts and idle -0.01; pivots -0.05; stops -0.3.
     - Interrupt only on a change of core state (standing or moving) or of gait.

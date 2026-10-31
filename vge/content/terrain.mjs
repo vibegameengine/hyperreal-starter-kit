@@ -1,4 +1,6 @@
-export const TERRAIN_MODULE = /\.terrain\.[jt]sx?$/;
+import { contentModule } from './contentKind.mjs';
+
+export const TERRAIN_MODULE = contentModule('terrain');
 const DESCRIBE = '/src/shared/terrain/describe.ts';
 const CONTENT_MODULE = '/src/shared/engine/content.ts';
 

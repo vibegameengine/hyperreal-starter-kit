@@ -4,7 +4,7 @@ import { LabStage } from '../../../../scenes/lab-stage/LabStage';
 import { colored } from '../../../../shared/engine/world';
 import { useHudMessages, useHudState, Vehicle, type VehicleState } from '../../../../shared/react';
 import type { Vector3 } from '../../../../shared/react/props';
-import { car } from '../../assets/car.vehicle';
+import { car } from '../../assets/car';
 
 const CUBE = '/Engine/BasicShapes/Cube.Cube';
 const CYLINDER = '/Engine/BasicShapes/Cylinder.Cylinder';

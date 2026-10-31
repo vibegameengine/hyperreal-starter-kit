@@ -5,10 +5,10 @@ import { LabStage } from '../../../../scenes/lab-stage/LabStage';
 import { useSkeletalMesh } from '../../../character/entities/ImportedCharacter';
 import { MANNEQUIN_MESHES, mannequinClips } from '../../../character/entities/mannequin';
 import { useFrame, useHudMessages, useHudState } from '../../../../shared/react';
-import curtainModel from '../../assets/cloth/curtain.glb';
-import flagModel from '../../assets/cloth/flag.glb';
-import { curtainFabric, flagFabric } from '../../assets/cloth/fabric.material';
-import metal, { brass } from '../../assets/cloth/metal.material';
+import curtainModel from '../../assets/cloth/curtain.glb?cloth=./curtainCloth.json';
+import flagModel from '../../assets/cloth/flag.glb?cloth=./flagCloth.json';
+import { curtainFabric, flagFabric } from '../../assets/cloth/fabric';
+import metal, { brass } from '../../assets/cloth/metal';
 import { blowWind, clothStats, FABRICS, weave, type Fabric } from './clothing';
 import { CapeRunner } from './CapeRunner';
 

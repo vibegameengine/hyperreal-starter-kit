@@ -6,8 +6,8 @@ import { loadContent, onNiagara } from '../../../../shared/engine/content';
 import { colored, world } from '../../../../shared/engine/world';
 import { Destructible, useHudMessages, useHudState, useSmoothedFps } from '../../../../shared/react';
 import type { Vector3 } from '../../../../shared/react/props';
-import { breakDust } from '../../assets/destruction.niagara';
-import { brickWall, stoneColumn } from '../../assets/destruction.fracture';
+import { breakDust } from '../../assets/breakDust';
+import { brickWall, stoneColumn } from '../../assets/breakables';
 
 const SPHERE = '/Engine/BasicShapes/Sphere.Sphere';
 const WALL_AT: Vector3 = [400, 0, 0];

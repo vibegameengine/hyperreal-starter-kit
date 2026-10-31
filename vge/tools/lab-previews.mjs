@@ -4,26 +4,17 @@ import { parseArgs } from 'node:util';
 import sharp from 'sharp';
 import { devServerUrl, runtimeDir } from './engine.mjs';
 import { startGame } from './game-process.mjs';
+import { labIds } from './lab-registry.mjs';
 
 const { values, positionals } = parseArgs({ options: { settle: { type: 'string', default: '6' } }, allowPositionals: true });
 const settleMs = Number(values.settle) * 1000;
 const root = resolve(import.meta.dirname, '../..');
 const previewsDir = join(root, 'src', 'ui', 'app', 'ui', 'labs', 'previews');
 const screenshotsDir = join(runtimeDir(), 'Build', 'Package', 'Windows', 'VibeGameEngine', 'Saved', 'Screenshots', 'Windows');
-const featuresDir = join(root, 'src', 'features');
-
 const PREVIEW_WIDTH = 960;
 const CAPTURE = { width: 1600, height: 900 };
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
-
-function labIds() {
-  return readdirSync(featuresDir).flatMap((slice) => {
-    const uiDir = join(featuresDir, slice, 'ui');
-    if (!existsSync(uiDir)) return [];
-    return readdirSync(uiDir).filter((name) => name.endsWith('.lab.ts')).map((name) => basename(name, '.lab.ts'));
-  });
-}
 
 async function evalInGames(code, timeoutMs = 5000) {
   const response = await fetch(`${devServerUrl()}/__vge/eval`, { method: 'POST', body: JSON.stringify({ code, timeoutMs }) });
@@ -83,5 +74,5 @@ async function capture(id) {
 }
 
 mkdirSync(previewsDir, { recursive: true });
-const wanted = positionals.length > 0 ? positionals : labIds();
+const wanted = positionals.length > 0 ? positionals : labIds(root);
 for (const id of wanted) await capture(id);

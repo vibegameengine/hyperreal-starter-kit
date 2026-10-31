@@ -4,8 +4,8 @@ import { LabStage } from '../../../../scenes/lab-stage/LabStage';
 import { world } from '../../../../shared/engine/world';
 import { instance } from '../../../../shared/material';
 import { Clouds, useFrame, useHudMessages, useHudState } from '../../../../shared/react';
-import { eveningClouds } from '../../assets/sky.material';
-import smoke from '../../assets/smoke.material';
+import { eveningClouds } from '../../assets/sky';
+import smoke from '../../assets/smoke';
 import { Forest } from './Forest';
 
 const QUALITY = ['low', 'medium', 'high', 'epic', 'cinematic'] as const;

@@ -1,4 +1,6 @@
-export const VEHICLE_MODULE = /\.vehicle\.[jt]sx?$/;
+import { contentModule } from './contentKind.mjs';
+
+export const VEHICLE_MODULE = contentModule('vehicle');
 const DESCRIBE = '/src/shared/vehicle/describe.ts';
 const CONTENT_MODULE = '/src/shared/engine/content.ts';
 const WHEEL_CLASS = '/Script/ChaosVehicles.ChaosVehicleWheel';

@@ -20,7 +20,6 @@ import { basename, join, relative, resolve } from 'node:path';
 import { engine, runtimeDir } from '../tools/engine.mjs';
 import { clipsRequests, importSpec, modelsOf, specOfModelKey } from './characters.mjs';
 import { clothOf } from './cloth.mjs';
-import { meshSettingsOf } from './meshSettings.mjs';
 import { createStandbyCooker } from './cooker.mjs';
 import { buildNiagaraSystem } from './niagara.mjs';
 import { buildTerrainLevel } from './terrain.mjs';
@@ -271,36 +270,37 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
   }
 
   // A model file decoded and imported into its own content folder; the version it replaces is deleted.
-  async function prepareModel(sourcePath, job) {
-    const name = assetName(sourcePath);
+  async function prepareModel(spec, job) {
+    const sourcePath = spec.file;
+    const settingsTag = spec.key.includes('?') ? `_${createHash('sha1').update(spec.key).digest('hex').slice(0, 6)}` : '';
+    const name = `${assetName(sourcePath)}${settingsTag}`;
     const decoded = await decode(sourcePath, join(job.logs, `${name}.glb`));
     // Each version lives in its own content path, so a new version never collides with a mounted one.
     const dest = `/${PLUGIN}/${name}_${job.tag}`;
-    const cloth = clothOf(sourcePath);
-    const meshSettings = meshSettingsOf(sourcePath);
-    const request = { source: decoded.file, dest, ...(cloth ? { cloth: cloth.description } : {}), ...(meshSettings ? { mesh: meshSettings.description } : {}) };
-    return { sourcePath, name, decoded, dest, cloth, meshSettings, request };
+    const cloth = clothOf(devDir, spec);
+    const request = { source: decoded.file, dest, ...(cloth ? { cloth: cloth.description } : {}), ...(spec.mesh ? { mesh: spec.mesh } : {}) };
+    return { sourcePath, name, decoded, dest, cloth, request, settings: { mesh: spec.mesh, cloth: spec.cloth } };
   }
 
   async function recordModel(prepared, imported, key, job) {
-    const { sourcePath, name, decoded, dest, cloth, meshSettings } = prepared;
+    const { sourcePath, name, decoded, dest, cloth, settings } = prepared;
     writeFileSync(join(job.logs, `import-${name}.json`), JSON.stringify(imported, null, 2));
     if (imported.itemError) throw new Error(`${key}: ${imported.itemError}`);
     const clothErrors = (imported.cloth ?? []).flatMap((mesh) => [mesh.error, ...(mesh.sections ?? []).map((section) => section.error)]).filter(Boolean);
     if (clothErrors.length) throw new Error(`cloth of ${key}: ${clothErrors.join('; ')}`);
     const previous = job.assets[key] ?? state.assets[key];
     if (previous) job.retired.push(previous.dest);
-    job.assets[key] = { source: sourcePath, sourceMtimeMs: statSync(sourcePath).mtimeMs, clothMtimeMs: cloth?.mtimeMs, meshSettingsMtimeMs: meshSettings?.mtimeMs, dest, objects: imported.objects, build: job.buildId, decoded: decoded.decoded, spec: { kind: 'model' } };
+    job.assets[key] = { source: sourcePath, sourceMtimeMs: statSync(sourcePath).mtimeMs, clothMtimeMs: cloth?.mtimeMs, dest, objects: imported.objects, build: job.buildId, decoded: decoded.decoded, spec: { kind: 'model', ...settings } };
     return imported.objects;
   }
 
-  async function importModel(sourcePath, key, job) {
-    const prepared = await prepareModel(sourcePath, job);
-    return recordModel(prepared, await service.call('import', prepared.request), key, job);
+  async function importModel(spec, job) {
+    const prepared = await prepareModel(spec, job);
+    return recordModel(prepared, await service.call('import', prepared.request), spec.key, job);
   }
 
   async function importModelsTogether(specs, job, failed) {
-    const prepared = await Promise.all(specs.map((spec) => prepareModel(spec.file, job).catch((err) => (failed.set(spec.key, err), null))));
+    const prepared = await Promise.all(specs.map((spec) => prepareModel(spec, job).catch((err) => (failed.set(spec.key, err), null))));
     const ready = specs.map((spec, index) => ({ spec, prepared: prepared[index] })).filter((entry) => entry.prepared);
     if (!ready.length) return;
     const imported = await service.call('import-many', { items: ready.map((entry) => entry.prepared.request) });
@@ -336,14 +336,14 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     for (const model of modelsOf(spec)) {
       if (state.assets[model] || job.assets[model]) continue;
       if (batchKeys.has(model)) throw new Error(`${spec.key} needs ${model}, whose import failed`);
-      if (!running.has(model)) schedule(model, () => build({ kind: 'model', key: model, file: resolve(devDir, model) }), (err) => err && log(`[content] ${model}: ${err.message}`));
+      if (!running.has(model)) schedule(model, () => build(specOfModelKey(devDir, model)), (err) => err && log(`[content] ${model}: ${err.message}`));
       await running.get(model);
       if (!state.assets[model]) throw new Error(`${spec.key} needs ${model}, whose build failed`);
     }
     if (spec.kind === 'sound') {
       await importSound(spec, job);
     } else if (spec.kind === 'model') {
-      await importModel(spec.file, spec.key, job);
+      await importModel(spec, job);
       // Clips and retargets built on the model reference its skeleton, deleted with its previous version: they are
       // built again in this build, before the cook, which would otherwise load them without their skeleton.
       for (const dependent of dependentsOf(spec.key)) if (!batchKeys.has(dependent.key)) await importVariant(dependent, job);
@@ -985,8 +985,7 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
   const isStale = (spec) => {
     const asset = state.assets[spec.key];
     if (asset?.sourceMtimeMs !== statSync(spec.file).mtimeMs) return true;
-    if ((spec.kind ?? 'model') === 'model' && asset.clothMtimeMs !== clothOf(spec.file)?.mtimeMs) return true;
-    if ((spec.kind ?? 'model') === 'model' && asset.meshSettingsMtimeMs !== meshSettingsOf(spec.file)?.mtimeMs) return true;    return Object.entries(asset.models ?? {}).some(([model, build]) => state.assets[model]?.build !== build);
+    if ((spec.kind ?? 'model') === 'model' && asset.clothMtimeMs !== clothOf(devDir, spec)?.mtimeMs) return true;    return Object.entries(asset.models ?? {}).some(([model, build]) => state.assets[model]?.build !== build);
   };
   // Every import of a file, for a save of it: the file itself and its variants (clips, retargets).
   const specsOf = (file) =>

@@ -4,7 +4,7 @@ import { LabStage } from '../../../../scenes/lab-stage/LabStage';
 import { world } from '../../../../shared/engine/world';
 import { useHudMessages, useHudState } from '../../../../shared/react';
 import { instance, type MaterialTuple } from '../../../../shared/material';
-import lava, { cooled } from '../../assets/lava.material';
+import lava, { cooled } from '../../assets/lava';
 
 
 const CUBE = '/Engine/BasicShapes/Cube.Cube';

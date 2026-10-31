@@ -1,4 +1,6 @@
-export const GROOM_MODULE = /\.groom\.[jt]sx?$/;
+import { contentModule } from './contentKind.mjs';
+
+export const GROOM_MODULE = contentModule('groom');
 const DESCRIBE = '/src/shared/groom/describe.ts';
 const CONTENT_MODULE = '/src/shared/engine/content.ts';
 

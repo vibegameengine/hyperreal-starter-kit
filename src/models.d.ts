@@ -34,7 +34,27 @@ declare module '*&retarget=manny' {
   const asset: import('./shared/engine/content').ContentAssetRef;
   export default asset;
 }
+declare module '*?retargetFrom=../ual/UAL1_Standard.glb' {
+  const asset: import('./shared/engine/content').ContentAssetRef;
+  export default asset;
+}
 declare module '*.fbx?retargetFrom=manny' {
+  const asset: import('./shared/engine/content').ContentAssetRef;
+  export default asset;
+}
+declare module '*?nanite=off' {
+  const asset: import('./shared/engine/content').ContentAssetRef;
+  export default asset;
+}
+declare module '*.glb?cloth=./capeCloth.json' {
+  const asset: import('./shared/engine/content').ContentAssetRef;
+  export default asset;
+}
+declare module '*.glb?cloth=./curtainCloth.json' {
+  const asset: import('./shared/engine/content').ContentAssetRef;
+  export default asset;
+}
+declare module '*.glb?cloth=./flagCloth.json' {
   const asset: import('./shared/engine/content').ContentAssetRef;
   export default asset;
 }

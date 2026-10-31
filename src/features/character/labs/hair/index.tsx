@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { LabStage } from '../../../../scenes/lab-stage/LabStage';
 import { world } from '../../../../shared/engine/world';
 import { Groom, useHudMessages, useHudState } from '../../../../shared/react';
-import { longHair } from '../../assets/longHair.groom';
+import { longHair } from '../../assets/longHair';
 import { Player } from '../../entities/Player';
 
 const playerMesh = () => (UE.GameplayStatics.GetPlayerCharacter(world, 0) as UE.Character | null)?.Mesh;
@@ -21,7 +21,7 @@ export function Scene() {
     <>
       <LabStage camera={null} />
       <Player at={[0, 0, 100]} variant="quinn" />
-      <Groom groom={longHair} target={playerMesh} simulate={simulate} wind={[0, wind, 0]} airDrag={0.6} />
+      <Groom groom={longHair} target={playerMesh} simulate={simulate} wind={[0, wind, 0]} airDrag={5} />
     </>
   );
 }

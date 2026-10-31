@@ -3,8 +3,8 @@ import { Player } from '../../features/character/entities/Player';
 import { GroundTextures } from '../../features/world/entities/GroundTextures';
 import { Lake } from '../../features/world/entities/Lake';
 import { Nature } from '../../features/world/entities/Nature';
-import { eveningClouds } from '../../features/world/assets/sky.material';
-import { valley } from '../../features/world/assets/valley.terrain';
+import { eveningClouds } from '../../features/world/assets/sky';
+import { valley } from '../../features/world/assets/valley';
 import { frameRateLimit, setFrameRateLimit } from '../../shared/engine/display';
 import { Clouds, Terrain, useHudMessages, useHudState, useSmoothedFps } from '../../shared/react';
 

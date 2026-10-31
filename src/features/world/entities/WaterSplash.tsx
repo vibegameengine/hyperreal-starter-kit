@@ -4,7 +4,7 @@ import { useRef } from 'react';
 import { world } from '../../../shared/engine/world';
 import { NiagaraSystem, useFrame } from '../../../shared/react';
 import { coastHeight, SEA_LEVEL } from '../assets/coastShape';
-import { waterSplash } from '../assets/ocean/splash.niagara';
+import { waterSplash } from '../assets/ocean/waterSplash';
 
 const DROPS_PER_METRE = 220;
 const MAX_RATE = 1600;

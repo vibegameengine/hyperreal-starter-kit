@@ -1,8 +1,0 @@
-{
-  "nanite": false,
-  "lods": [
-    { "triangles": 0.5, "screenSize": 0.05 },
-    { "triangles": 0.2, "screenSize": 0.02 },
-    { "triangles": 0.08, "screenSize": 0.008 }
-  ]
-}

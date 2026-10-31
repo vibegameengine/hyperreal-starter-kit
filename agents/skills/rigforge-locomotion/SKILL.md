@@ -4,7 +4,7 @@ description: >-
   Make the character's locomotion for a game on this kit from a video: capture it in RigForge (SpriteForge),
   cut the gait, generate the full set of loops, starts, stops, pivots and turns with MotionBricks, export it as
   Mixamo FBX into src/features/character/assets/mixamo/motion, and feed it to motion matching
-  (manny.motion.ts, defineMotionMatching). MANDATORY before adding or replacing walk/jog/run clips, building a
+  (mannyMotion.ts, defineMotionMatching). MANDATORY before adding or replacing walk/jog/run clips, building a
   motion-matching database from our own clips, or when a gait in the game does not look like the video it came
   from. Trigger on: "locomotion", "walk cycle", "jog", "run from video", "mocap", "RigForge", "motion matching",
   "starts/stops/pivots", "the run looks upright", "legs look wrong in the game", "стилизованный бег".
@@ -33,8 +33,8 @@ change", first: a wrong clip is fixed in RigForge or in the file (layer 2), neve
 4. **Import lines**: each clip is imported onto the Mixamo skeleton and retargeted to Manny in the same line, e.g.
    `./mixamo/motion/jog_loop.fbx?skeleton=../default-humanoid.fbx&retarget=manny` (see the `mixamo-characters`
    skill for the query parameters).
-5. **Motion matching**: `src/features/character/assets/manny.motion.ts` builds the databases with
-   `defineMotionMatching` from those import paths: loops, starts, stops and pivots per gait, each with its own
+5. **Motion matching**: `src/features/character/assets/mannyMotion.ts` builds the databases with
+   `defineMotionMatching` from those import paths (calling it is what makes the module a motion-matching module): loops, starts, stops and pivots per gait, each with its own
    continuing-pose cost bias. The `motion-matching` lab (`src/features/character/labs/motion-matching`) runs a
    fixed scenario (idle, walk, run, stop, 90 and 180 degree turns) and lists the clips in each database.
 

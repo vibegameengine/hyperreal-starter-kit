@@ -8,6 +8,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { init, parse } from 'es-module-lexer';
 import { transformSync } from 'esbuild';
 import { contentSpec, modelsOf } from './characters.mjs';
+import { contentKindsOf } from './contentKind.mjs';
 
 const MODEL = /\.(glb|gltf|fbx|abc|wav|mp3|ogg|flac|opus|aif|aiff)$/i;
 const CODE = /\.(m?[jt]sx?)$/;
@@ -50,9 +51,8 @@ export async function importedContent({ root, srcDir }) {
         for (const model of modelsOf(spec)) models.add(model);
         continue;
       }
-      if (!/\.(material|niagara|terrain|motion|compute|pcg|fracture|vehicle|groom)(\.[jt]sx?)?$/.test(path)) continue;
       const found = MODULE_EXTENSIONS.map((extension) => target + extension).find((candidate) => existsSync(candidate) && CODE.test(candidate));
-      if (found) modules.add(keyOf(found));
+      if (found && contentKindsOf(found).size) modules.add(keyOf(found));
     }
   }
   return { models, modules, unreadable };

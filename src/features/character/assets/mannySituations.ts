@@ -1,5 +1,5 @@
 import type { MotionSituations, SituationDatabases } from '../entities/motionSituation';
-import { mannyJog, mannyJogIdle, mannyJogPivots, mannyJogStarts, mannyJogStops, mannyMotion, mannyWalkIdle, mannyWalkPivots, mannyWalkStarts, mannyWalkStops } from './manny.motion';
+import { mannyJog, mannyJogIdle, mannyJogPivots, mannyJogStarts, mannyJogStops, mannyMotion, mannyWalkIdle, mannyWalkPivots, mannyWalkStarts, mannyWalkStops } from './mannyMotion';
 
 const DATABASES: SituationDatabases = {
   'idle:walk': mannyWalkIdle,

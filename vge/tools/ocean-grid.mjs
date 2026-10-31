@@ -1,4 +1,3 @@
-import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Document, NodeIO } from '@gltf-transform/core';
 
@@ -45,5 +44,4 @@ const primitive = document
   .setAttribute('TEXCOORD_0', accessor('VEC2', uvs));
 document.createScene('ocean_grid').addChild(document.createNode('ocean_grid').setMesh(document.createMesh('ocean_grid').addPrimitive(primitive)));
 await new NodeIO().write(join(outDir, 'grid.glb'), document);
-writeFileSync(join(outDir, 'grid.mesh.json'), `${JSON.stringify({ nanite: false }, null, 2)}\n`);
 console.log(`wrote grid.glb, ${side * side} vertices, ${indices.length / 3} triangles`);

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { devServerUrl, unrealRoot } from './engine.mjs';
 
 const runs = Number(process.argv[2] ?? '3');
-const modulePath = new URL('../../src/features/materials/assets/lava.material.tsx', import.meta.url);
+const modulePath = new URL('../../src/features/materials/assets/lava.tsx', import.meta.url);
 const original = readFileSync(modulePath, 'utf8');
 const pipelineDir = join(unrealRoot, 'Plugins', 'VgeLive', 'Saved', 'Pipeline');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

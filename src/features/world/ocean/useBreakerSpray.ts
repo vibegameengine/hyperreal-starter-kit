@@ -1,7 +1,7 @@
 import * as UE from 'ue';
 import { useEffect, useMemo } from 'react';
 import { useCompute } from '../../../shared/react';
-import { oceanSprayEmit, oceanSprayReserve, oceanSprayUpdate } from '../assets/ocean/spray.compute';
+import { oceanSprayEmit, oceanSprayReserve, oceanSprayUpdate } from '../assets/ocean/oceanSpray';
 import { createSprayEmitter, mountSprayEmitter } from './sprayEmitter';
 import { createSprayTargets } from './sprayTargets';
 import type { ShoreTextures } from './Ocean';

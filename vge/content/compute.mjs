@@ -1,4 +1,6 @@
-export const COMPUTE_MODULE = /\.compute\.[jt]sx?$/;
+import { contentModule } from './contentKind.mjs';
+
+export const COMPUTE_MODULE = contentModule('compute');
 const DESCRIBE = '/src/shared/compute/describe.ts';
 const CONTENT_MODULE = '/src/shared/engine/content.ts';
 

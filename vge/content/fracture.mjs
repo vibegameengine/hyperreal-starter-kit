@@ -1,4 +1,6 @@
-export const FRACTURE_MODULE = /\.fracture\.[jt]sx?$/;
+import { contentModule } from './contentKind.mjs';
+
+export const FRACTURE_MODULE = contentModule('fracture');
 const DESCRIBE = '/src/shared/fracture/describe.ts';
 const CONTENT_MODULE = '/src/shared/engine/content.ts';
 

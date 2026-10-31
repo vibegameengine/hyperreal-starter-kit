@@ -1,7 +1,7 @@
 import { LabStage } from '../../../../scenes/lab-stage/LabStage';
 import { Player } from '../../../character/entities/Player';
-import { eveningClouds } from '../../assets/sky.material';
-import { waterLab } from '../../assets/waterLab.terrain';
+import { eveningClouds } from '../../assets/sky';
+import { waterLab } from '../../assets/waterLab';
 import { LAKE_CENTER, WATER_LEVEL } from '../../assets/waterLabShape';
 import { Crates } from '../../entities/Crates';
 import { GroundTextures } from '../../entities/GroundTextures';

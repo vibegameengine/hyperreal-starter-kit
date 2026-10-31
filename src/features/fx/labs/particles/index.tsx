@@ -3,7 +3,7 @@ import { $ref } from 'puerts';
 import { useRef, useState } from 'react';
 import { LabStage } from '../../../../scenes/lab-stage/LabStage';
 import { NiagaraSystem, useFrame, useHudMessages, useHudState } from '../../../../shared/react';
-import { burst, meshes, ribbon, sparks } from '../../assets/effects.niagara';
+import { burst, meshes, ribbon, sparks } from '../../assets/effects';
 
 const TINTS: Record<string, readonly [number, number, number, number]> = {
   ember: [1, 0.45, 0.12, 1],

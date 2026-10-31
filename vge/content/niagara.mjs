@@ -1,8 +1,10 @@
-// Niagara modules (`*.niagara.ts`, src/shared/niagara): described in Node like material modules (through their
-// describer, since renderers use materials), built by the content service with the engine's Niagara tool calls
-// (NiagaraToolsets in the ToolsetRegistry, run by Source/VibeGameEngineTools/Private/VgeNiagara.cpp), and turned into
-// the handle module the game imports in their place.
-export const NIAGARA_MODULE = /\.niagara\.[jt]sx?$/;
+// Niagara modules (modules that call defineSystem from src/shared/niagara): described in Node like material modules
+// (through their describer, since renderers use materials), built by the content service with the engine's Niagara
+// tool calls (NiagaraToolsets in the ToolsetRegistry, run by Source/VibeGameEngineTools/Private/VgeNiagara.cpp), and
+// turned into the handle module the game imports in their place.
+import { contentModule } from './contentKind.mjs';
+
+export const NIAGARA_MODULE = contentModule('niagara');
 const DESCRIBE = '/src/shared/niagara/describe.ts';
 const CONTENT_MODULE = '/src/shared/engine/content.ts';
 

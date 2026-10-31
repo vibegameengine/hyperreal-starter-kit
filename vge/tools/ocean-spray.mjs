@@ -1,4 +1,3 @@
-import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Document, NodeIO } from '@gltf-transform/core';
 
@@ -36,5 +35,4 @@ const primitive = document
   .setAttribute('TEXCOORD_0', accessor('VEC2', uvs));
 document.createScene('spray_sprite').addChild(document.createNode('spray_sprite').setMesh(document.createMesh('spray_sprite').addPrimitive(primitive)));
 await new NodeIO().write(join(outDir, 'spray.glb'), document);
-writeFileSync(join(outDir, 'spray.mesh.json'), `${JSON.stringify({ nanite: false }, null, 2)}\n`);
 console.log(`wrote spray.glb, ${corners.length} vertices, ${indices.length / 3} triangles`);

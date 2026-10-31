@@ -3,15 +3,12 @@ import { $ref, $unref } from 'puerts';
 import { createElement } from 'react';
 import { disposeScope, own, world } from '../shared/engine/world';
 import { createSceneRoot } from '../shared/react';
-import type { DevLab, SceneModule } from '../shared/lib/devLab';
-
-const devLabManifests = import.meta.env.DEV ? import.meta.glob<{ default: DevLab }>('../features/*/ui/*.lab.ts') : {};
+import type { SceneModule } from '../shared/lib/devLab';
 
 async function loadLab(id: string): Promise<SceneModule | undefined> {
-  const manifestPath = Object.keys(devLabManifests).find((path) => path.endsWith(`/ui/${id}.lab.ts`));
-  if (!manifestPath) return undefined;
-  const manifest = await devLabManifests[manifestPath]();
-  return manifest.default.load();
+  if (!import.meta.env.DEV) return undefined;
+  const { LABS } = await import('./labs');
+  return LABS.find((lab) => lab.id === id)?.load();
 }
 
 function loadScene(id: string): Promise<SceneModule | undefined> {

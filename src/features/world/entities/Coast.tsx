@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { loadContent } from '../../../shared/engine/content';
 import { instance } from '../../../shared/material';
 import { useContentAsset, useFrame } from '../../../shared/react';
-import { cliff } from '../assets/coast/cliff.material';
+import { cliff } from '../assets/coast/cliff';
 import { COAST_CLIFFS } from '../assets/coast/cliffs/segments';
 import { CLIFF_ROCKS, COAST_TEXTURE_MAPS } from '../assets/coastTextures';
 import { coastHeights, SEA_LEVEL } from '../assets/coastShape';

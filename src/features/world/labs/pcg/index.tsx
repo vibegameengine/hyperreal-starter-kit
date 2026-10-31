@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { LabStage } from '../../../../scenes/lab-stage/LabStage';
 import { Player } from '../../../character/entities/Player';
 import { Clouds, Pcg, Terrain, useHudMessages, useHudState, type PcgGenerated } from '../../../../shared/react';
-import { forest } from '../../assets/forest.pcg';
-import { pcgLab } from '../../assets/pcgLab.terrain';
+import { forest } from '../../assets/forest';
+import { pcgLab } from '../../assets/pcgLab';
 import { HILL_HEIGHT, PATH } from '../../assets/pcgLabShape';
-import { eveningClouds } from '../../assets/sky.material';
+import { eveningClouds } from '../../assets/sky';
 import { GroundTextures } from '../../entities/GroundTextures';
 
 const REGION: [number, number, number] = [9000, 9000, 2500];

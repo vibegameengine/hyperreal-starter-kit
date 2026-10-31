@@ -5,7 +5,7 @@ import { isA } from '../../shared/react/catalog';
 import type { HostNode } from '../../shared/react/renderer';
 import { overrideProp, propsOf } from './devtools';
 import { editState, type Selected } from './editState';
-import outline from './outline.material';
+import outline from './outline';
 
 const SELECTED_STENCIL = 1;
 const ACTIVE_STENCIL = 2;

@@ -1,5 +1,5 @@
 import * as UE from 'ue';
-import { lakeWater } from '../assets/water.material';
+import { lakeWater } from '../assets/lakeWater';
 import { LAKE } from '../assets/valleyShape';
 
 const PLANE = '/Engine/BasicShapes/Plane.Plane';

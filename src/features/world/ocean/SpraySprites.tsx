@@ -4,9 +4,9 @@ import { loadContent, onMaterial } from '../../../shared/engine/content';
 import { world } from '../../../shared/engine/world';
 import { useContentMesh } from '../../../shared/react';
 import { SEA_LEVEL } from '../assets/coastShape';
-import { sprayParticles } from '../assets/ocean/spray.material';
+import { sprayParticles } from '../assets/ocean/sprayParticles';
 import { SPRAY_TOTAL } from '../assets/ocean/spraySpec';
-import sprite from '../assets/ocean/spray.glb';
+import sprite from '../assets/ocean/spray.glb?nanite=off';
 import type { SprayTargets } from './sprayTargets';
 
 const SPRITE_SORT_PRIORITY = 1;

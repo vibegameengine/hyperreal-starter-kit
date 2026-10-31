@@ -4,12 +4,13 @@ description: >-
   Build and maintain isolated DEV labs in this Unreal kit (scenes that exercise
   one asset, system or mechanic in isolation, each openable in its own game
   process). MANDATORY before creating a new lab, giving a feature "somewhere to
-  look at it", or touching an existing lab's stage, manifest, or registration.
-  Enforces the four rules: a lab exports nothing but its manifest
-  (src/features/<slice>/ui/<id>.lab.ts), a lab mounts the shared lab stage
-  (src/scenes/lab-stage) instead of spawning its own sun/sky/ground/camera,
-  every lab is found by the glob registry in src/app/scenes.ts, and the lab
-  index shows every lab. Trigger on: "add a lab", "isolated demo", "somewhere to
+  look at it", or touching an existing lab's stage, labs.ts entry, or preview.
+  Enforces the four rules: nothing outside a lab imports from it except its one
+  defineLab entry in the list LABS in src/app/labs.ts, a lab mounts the shared
+  lab stage (src/scenes/lab-stage) instead of spawning its own
+  sun/sky/ground/camera, every lab is registered in that one list (which
+  src/app/scenes.ts and the shell's lab index both read), and the lab index
+  shows every lab with its preview (src/ui/app/labs/previews.ts). Trigger on: "add a lab", "isolated demo", "somewhere to
   test this", "tuning bench", "inspection scene", "--lab", "-Scene=labs/",
   "lab stage", "defineLab", "why does every lab look different".
 ---
@@ -40,16 +41,18 @@ within a dozen labs no two are the same shape.
 ## The contract (src/shared/lib/devLab.ts)
 
 ```ts
-// features/<slice>/ui/<id>.lab.ts — the manifest, and the only file outside the lab that names it
-import { defineLab } from '../../../shared/lib/devLab';
+// src/app/labs.ts — the list of every lab, and the only file outside a lab that names it
+import { defineLab, type DevLab } from '../shared/lib/devLab';
 
-export default defineLab({
-  id: 'flight-case',
-  title: 'Flight case',
-  description: 'features/demo/assets/flight-case.glb on a turntable; saving the .glb swaps the mesh live.',
-  category: 'gear',
-  load: () => import('../labs/flight-case'),
-});
+export const LABS: readonly DevLab[] = [
+  defineLab({
+    id: 'flight-case',
+    title: 'Flight case',
+    description: 'features/demo/assets/flight-case.glb on a turntable; saving the .glb swaps the mesh live.',
+    category: 'gear',
+    load: () => import('../features/demo/labs/flight-case'),
+  }),
+];
 ```
 
 ```tsx
@@ -83,8 +86,9 @@ labs are React.
 feature it demonstrates; it never becomes a dependency of that feature, of
 another lab, or — worst of all — of the shipped game.
 
-The single permitted export is the lab's **registration manifest** (rule 3),
-consumed only by the registry glob. Everything else a lab contains — its arena,
+The single permitted reference from outside is the lab's **registration entry**
+in `LABS` in `src/app/labs.ts` (rule 3), whose `load` imports the body lazily.
+Everything else a lab contains — its arena,
 its demo props, its camera placement, its fixtures — stays private in
 `features/<slice>/labs/<id>/`.
 
@@ -97,18 +101,18 @@ Why this is a hard rule and not a preference:
 - In the web kit a lab route was stripped from production builds, and an import
   from production code defeated the stripping. This kit now has a release
   bundle of game code (`npm run build` bundles `src/release.ts` into
-  `unreal/Content/JavaScript/vge/game.js`), but it does not strip labs yet: the
-  registry glob in `scenes.ts` is not gated. The rule holds anyway, because
+  `unreal/Content/JavaScript/vge/game.js`), and `scenes.ts` imports the lab
+  list only in the dev build (`import.meta.env.DEV`). The rule holds anyway, because
   whatever production imports from a lab ships with it, and so does every model
   that lab imports.
   - The web kit's one sanctioned exception was a **showcase deployment** — a
     build whose whole point is the labs — switched on by an explicit flag, off by
     default. It changes what ships, never what may import what: production code
-    importing a lab stays banned either way, and a lab still exports nothing but
-    its manifest.
+    importing a lab stays banned either way, and a lab is still reached only
+    through its entry in `labs.ts`.
 - The same leak happens through a **shared barrel**. A feature's `index.ts`
   (`features/demo/index.ts` re-exports `LiveAsset`, `SpinningCubes`)
-  must never re-export anything from `labs/` or `ui/*.lab.ts`. The lab body
+  must never re-export anything from `labs/`. The lab body
   imports the feature's entity from its own file
   (`../../entities/LiveAsset`), never the other way round.
 
@@ -154,11 +158,11 @@ own sun, sky, fog, sky light, ground or view camera.
   out of date and nobody knows it.
 - **A lab that legitimately cannot use the stage** — because the stage IS its
   subject (a sky or fog setup that owns the whole atmosphere, a renderer
-  experiment) — says so in its manifest description, naming what it replaces and
-  why. That sentence is the whole exemption process; without it, the next author
-  copies the deviation believing it was considered. (The web kit used a code
-  comment for this; this repository bans comments that explain, CLAUDE.md, so
-  the manifest carries it.)
+  experiment) — says so in the description of its `labs.ts` entry, naming what it
+  replaces and why. That sentence is the whole exemption process; without it, the
+  next author copies the deviation believing it was considered. (The web kit used
+  a code comment for this; this repository bans comments that explain, CLAUDE.md,
+  so the entry carries it.)
 
 The failure this rule exists to stop is not ugliness, it is **incomparability**.
 When each lab lights its subject differently, two labs cannot be held next to
@@ -167,30 +171,30 @@ right?" has no answer that survives the trip to the game.
 
 ### 3. Every lab is REGISTERED, and the registry generates the scene list
 
-Each lab declares one manifest — a stable id, a title, a one-line description of
-what the lab proves, its category, and a lazy loader for its body. The registry
-collects those manifests automatically —
-`import.meta.glob('../features/*/ui/*.lab.ts', { eager: true })` in
-`src/app/scenes.ts`, not a hand-maintained list — and **the scene list is
-built from the registry**: every lab becomes the scene `labs/<id>`. The shell
-page reads the same manifests with its own glob
-(`src/ui/app/labs/labRegistry.ts`), so the lab index and the `/labs/<id>` routes
-come from them too, never from a hand-written list.
+Each lab is one explicit `defineLab({ id, title, description, category, load })`
+entry in the list `LABS` in `src/app/labs.ts` — a stable id, a title, a one-line
+description of what the lab proves, its category, and a lazy loader for its body
+(`load: () => import('../features/<slice>/labs/<id>')`). There is no file-name
+convention and no glob: a lab is registered by writing its entry there. **The
+scene list is built from that list**: `src/app/scenes.ts` finds a lab in `LABS`
+by id, so every lab becomes the scene `labs/<id>`. The shell page maps the same
+list (`src/ui/app/labs/labRegistry.ts`), so the lab index and the `/labs/<id>`
+routes come from it too.
 
-- **No hand-registration.** A per-lab entry copied into `scenes.ts` is how a repo
-  ends up with scenes nobody remembers, labs with no scene, and two names for one
-  lab. If adding a lab means editing the router, someone will add a lab without
-  editing the router.
-- **The registry is the only list.** A lab that is not in it does not exist —
-  there is no second place to look.
-- **Gate the whole registry in one place.** The web kit DEV-gated its registry in
+- **No second registration.** A per-lab entry copied into `scenes.ts` or the
+  router is how a repo ends up with scenes nobody remembers, labs with no scene,
+  and two names for one lab. Adding a lab means adding its entry to `labs.ts`,
+  and nothing else outside the lab.
+- **`LABS` is the only list.** A lab that is not in it does not exist — there is
+  no second place to look.
+- **The whole list is gated in one place.** The web kit DEV-gated its registry in
   one place so labs could not leak into production one forgotten guard at a
-  time. This kit's release bundle (`npm run build`) does not gate it yet; when
-  the gate is added, it goes on the glob in `scenes.ts`, once. (The shell page
-  already gates its lab subtree in one place: the `__SHOWCASE_SURFACES__`
-  dynamic import in `src/ui/app/router/AppRouter.tsx`.)
-- **The manifest is metadata, not an API.** It carries strings and a loader. It
-  must not export the lab's entities, systems, or fixtures — that would be rule 1
+  time. Here `loadLab` in `scenes.ts` imports `labs.ts` only when
+  `import.meta.env.DEV` is true, once. (The shell page gates its lab subtree in
+  one place too: the `__SHOWCASE_SURFACES__` dynamic import in
+  `src/ui/app/router/AppRouter.tsx`.)
+- **The entry is metadata, not an API.** It carries strings and a loader. It
+  must not expose the lab's entities, systems, or fixtures — that would be rule 1
   with extra steps.
 
 The description field is not decoration: it is what makes the index usable — the
@@ -213,20 +217,22 @@ title bar's "Labs"), `LabsScreen` in `src/ui/app/ui/labs/LabsScreen.tsx`: the
 labs grouped by category, one `LabCard` (`src/ui/features/ui-kit`) per lab with
 its title and description, and a filter. A card links to `/labs/<id>`, which
 shows the lab as its own game process under `<GameWorld>`. `labRegistry.ts`
-attaches a preview by file name from `src/ui/app/ui/labs/previews/<id>.webp`,
-and a card without one shows that it is missing. `npm run labs:previews [<id>...]`
-(`vge/tools/lab-previews.mjs`, with `npm run dev` running) walks the same
-manifests (`src/features/*/ui/*.lab.ts`), starts each lab as a rendered
+attaches each lab's preview from `LAB_PREVIEWS` in `src/ui/app/labs/previews.ts`,
+an explicit import of `src/ui/app/ui/labs/previews/<id>.webp` keyed by the lab
+id, and a card without one shows that it is missing. `npm run labs:previews [<id>...]`
+(`vge/tools/lab-previews.mjs`, with `npm run dev` running) reads the lab ids from
+`src/app/labs.ts` (`vge/tools/lab-registry.mjs`), starts each lab as a rendered
 1600×900 game window, waits for its scene, lets it settle (`--settle <s>`, 6 by
-default), takes `HighResShot` and writes the 960 px webp. The web kit's rule holds
+default), takes `HighResShot` and writes the 960 px webp; the new file is then
+imported by one line in `previews.ts`. The web kit's rule holds
 unchanged: a real captured frame of that lab from a rendered window (never a
 `-nullrhi` process, never a hand-drawn icon), committed with the lab, re-captured
 when its look changes, and a missing one visibly missing.
 
 **Enforced.** A lab is not finished without its preview: creating a lab means capturing it in the same change.
 `.claude/hooks/lab-previews-guard.mjs` (a Stop hook in `.claude/settings.json`) refuses to end an agent's turn while
-any `src/features/*/ui/<id>.lab.ts` has no `src/ui/app/ui/labs/previews/<id>.webp`, and names the command that
-captures the missing ones. Written on 2026-10-30, when sixteen labs (pcg, destruction and vehicle among them) had
+any lab id in `src/app/labs.ts` has no key in `LAB_PREVIEWS` in `src/ui/app/labs/previews.ts`, and names the command
+that captures the missing ones. Written on 2026-10-30, when sixteen labs (pcg, destruction and vehicle among them) had
 been added without a preview while this rule stood here unchecked.
 
 ### 5. A lab is for a PERSON as much as for an agent
@@ -270,8 +276,8 @@ focus? }}`; only a lab with its own camera (a player's) passes `camera={null}`.
 **A lab owns:** its subject on the shared stage; the drivers that move it
 (a turntable in `useFrame`, a clip cycle in a `useEffect` timer); a readout of whatever
 numbers the tuning produces (the game log, or a value `node vge/tools/game.mjs` can
-read); its own fixture data (an arena, a pose, a sample set); and the manifest
-copy that explains it.
+read); its own fixture data (an arena, a pose, a sample set); and the
+description in its `labs.ts` entry that explains it.
 
 **A lab must not own:** a second copy of the feature's logic (drive the REAL
 system — a lab that reimplements what it demonstrates proves nothing); a private
@@ -298,9 +304,9 @@ version (the `flight-case` lab does this). Never load a cooked path by hand.
 ## Build a lab
 
 1. **Name what the lab proves**, in one sentence, before writing anything. That
-   sentence becomes the manifest description and decides everything else. If it
+   sentence becomes the lab's description and decides everything else. If it
    is more than one sentence, it is more than one lab.
-2. **Check the registry first** (`features/*/ui/*.lab.ts`). If a lab already
+2. **Check the registry first** (`LABS` in `src/app/labs.ts`). If a lab already
    exercises this system, extend it — add a mode, another subject — rather than
    opening a second lab onto the same thing. Two labs onto one system means
    neither is authoritative, and the newer one silently rots.
@@ -308,8 +314,8 @@ version (the `flight-case` lab does this). Never load a cooked path by hand.
    camera.
 4. **Mount the REAL subject** — the feature's own entity, system, material.
 5. **Add the drivers and the readout**, initialized from the real values.
-6. **Write the manifest** in `features/<slice>/ui/<id>.lab.ts` and let the glob
-   register it.
+6. **Register it**: one `defineLab` entry in `LABS` in `src/app/labs.ts` whose
+   `load` imports `../features/<slice>/labs/<id>`.
 7. **Confirm it in the index**: the lab is listed in the shell's lab index
    (`npm run shell`, "Labs") and opens from it (rule 4 as this kit can satisfy
    it today).
@@ -317,13 +323,15 @@ version (the `flight-case` lab does this). Never load a cooked path by hand.
    `npm run play -- --lab <id>`, capture the window, look at it. The lab is the
    isolated proof surface, so a lab that has not been looked at has not been
    built.
+9. **Capture its preview** (`npm run labs:previews <id>`) and add one import line
+   for it to `LAB_PREVIEWS` in `src/ui/app/labs/previews.ts` (rule 4).
 
 ## One lab per subject — and one scene per lab
 
 Two anti-patterns, both of which look reasonable on the day:
 
 - **Several labs onto one body.** A lab that takes a parameter (which asset,
-  which sample, which clip) does not need one manifest per value. It needs ONE
+  which sample, which clip) does not need one `labs.ts` entry per value. It needs ONE
   lab and a selector inside it. A family of near-identical lab ids each passing a
   different constant into the same body is a registry pretending to be a router.
 - **Several labs onto one subject.** Where a system has grown a second lab
@@ -331,9 +339,9 @@ Two anti-patterns, both of which look reasonable on the day:
 
 ## Naming and automation
 
-- One kebab-case id per lab, used as its manifest file (`ui/<id>.lab.ts`), its
-  body folder (`labs/<id>/`), its manifest `id`, its scene id (`labs/<id>`) and
-  its `--lab <id>` argument. One name, everywhere — never a folder that disagrees
+- One kebab-case id per lab, used as its body folder (`labs/<id>/`), the `id` of
+  its `labs.ts` entry, its `LAB_PREVIEWS` key and preview file (`<id>.webp`), its
+  scene id (`labs/<id>`) and its `--lab <id>` argument. One name, everywhere — never a folder that disagrees
   with its id.
 - Name a lab for its SUBJECT, not for the study that produced it. A lab called
   after a one-off investigation is unfindable six weeks later.
@@ -351,12 +359,12 @@ A lab is done when all of these are true:
 
 - [ ] Nothing outside it imports anything from inside it (grep for its folder).
 - [ ] It spawns no sun, sky, sky light, ground or view camera of its own — or its
-      manifest description names why the stage cannot serve it.
-- [ ] Its manifest is present and its scene came from the registry glob, not a
-      hand edit of `scenes.ts`.
+      `labs.ts` description names why the stage cannot serve it.
+- [ ] Its entry is in `LABS` in `src/app/labs.ts`, and its scene came from that
+      list, not a hand edit of `scenes.ts`.
 - [ ] It is listed in the shell's lab index (`/labs`) and opens from it.
-- [ ] Its preview is captured (`npm run labs:previews <id>`), looked at, and
-      committed with it — rule 4.
+- [ ] Its preview is captured (`npm run labs:previews <id>`), looked at,
+      imported in `src/ui/app/labs/previews.ts`, and committed with it — rule 4.
 - [ ] It drives the real system, and its readout matches the shape of the file
       the values belong in.
 - [ ] A person who opens it sees what is happening and controls every case it

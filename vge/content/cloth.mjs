@@ -1,13 +1,8 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
 
-export const CLOTH_SUFFIX = '.cloth.json';
-
-export const clothFileOf = (model) => model.replace(/\.[^.\\/]+$/, CLOTH_SUFFIX);
-
-export const modelsOfClothFile = (file) => ['.glb', '.gltf', '.fbx'].map((extension) => file.slice(0, -CLOTH_SUFFIX.length) + extension);
-
-export function clothOf(model) {
-  const file = clothFileOf(model);
-  if (!existsSync(file)) return undefined;
+export function clothOf(root, spec) {
+  if (!spec.cloth) return undefined;
+  const file = resolve(root, spec.cloth);
   return { file, mtimeMs: statSync(file).mtimeMs, description: JSON.parse(readFileSync(file, 'utf8')) };
 }

@@ -1,4 +1,6 @@
-export const MOTION_MODULE = /\.motion\.[jt]sx?$/;
+import { contentModule } from './contentKind.mjs';
+
+export const MOTION_MODULE = contentModule('motion');
 const DESCRIBE = '/src/shared/motion/describe.ts';
 const CONTENT_MODULE = '/src/shared/engine/content.ts';
 

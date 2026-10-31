@@ -2,7 +2,7 @@ import * as UE from 'ue';
 import type { ReactNode } from 'react';
 import { instance } from '../../shared/material';
 import type { Vector3 } from '../../shared/react/props';
-import gizmo from './gizmo.material';
+import gizmo from './gizmo';
 import {
   ALPHA,
   ALPHA_HIGHLIGHT,
