@@ -32,7 +32,7 @@ function kindsIn(source) {
 
 export function contentKindsOf(file) {
   const path = file.split('?')[0].replaceAll('\\', '/');
-  if (!CODE.test(path) || path.includes('/shared/') || path.endsWith('.d.ts')) return new Set();
+  if (!CODE.test(path) || path.endsWith('.d.ts')) return new Set();
   let modified;
   try {
     modified = statSync(path).mtimeMs;
