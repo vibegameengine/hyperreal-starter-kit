@@ -46,15 +46,15 @@ declare module '*?nanite=off' {
   const asset: import('./shared/engine/content').ContentAssetRef;
   export default asset;
 }
-declare module '*.glb?cloth=./capeCloth.json' {
+declare module '*/cape.glb?cloth=Cloth&pinAbove=z:-2&ramp=8&reach=160&density=0.6' {
   const asset: import('./shared/engine/content').ContentAssetRef;
   export default asset;
 }
-declare module '*.glb?cloth=./curtainCloth.json' {
+declare module '*/curtain.glb?cloth=Cloth&pinAbove=z:253&ramp=10&reach=260&density=0.45' {
   const asset: import('./shared/engine/content').ContentAssetRef;
   export default asset;
 }
-declare module '*.glb?cloth=./flagCloth.json' {
+declare module '*/flag.glb?cloth=Cloth&pinBelow=x:5&ramp=12&reach=220&density=0.2' {
   const asset: import('./shared/engine/content').ContentAssetRef;
   export default asset;
 }

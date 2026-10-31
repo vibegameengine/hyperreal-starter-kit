@@ -11,6 +11,7 @@ export { Destructible, type DestructibleProps } from './destructible';
 export { Vehicle, type VehicleProps, type VehicleState } from './vehicle';
 export { ChaseCamera, type ChaseCameraProps } from './chaseCamera';
 export { Groom, type GroomProps } from './groom';
+export { applyClothBehaviour, clothInteractor, useClothBehaviour, type ClothBehaviour } from './cloth';
 export { MetaHuman, type MetaHumanProps } from './metaHuman';
 export { Clouds, type CloudsProps } from './clouds';
 export { motionDatabaseOf, useMotionMatchingClass, useMotionMatchingDatabases, useMotionMatchingSpeed } from './motionMatching';

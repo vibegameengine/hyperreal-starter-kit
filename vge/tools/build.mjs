@@ -29,7 +29,6 @@ import { materialsEnvironment, uiKitClientPlugins, unrealResolve } from '../vite
 import { materialAssetsPlugin } from '../vite/materialAssetsPlugin.mjs';
 import { reactCompilerPlugin } from '../vite/reactCompiler.mjs';
 import { prepareSound } from '../content/sound.mjs';
-import { clothOf } from '../content/cloth.mjs';
 import { engine, project, repoRoot, runtimeDir, unrealRoot } from './engine.mjs';
 import { ensureShipping } from './runtime.mjs';
 import { refuseWhileOwnDevServerRuns, step } from './steps.mjs';
@@ -86,8 +85,7 @@ function importModel(modelKey) {
       const settingsTag = key.includes('?') ? `_${createHash('sha1').update(key).digest('hex').slice(0, 6)}` : '';
       const dest = `${destOf(path)}${settingsTag}`;
       const decoded = await decode(spec.file, join(workDir, `${path.replace(/\.[^.]+$/, '')}${settingsTag}.glb`));
-      const cloth = clothOf(devDir, spec);
-      const result = await service.call('import', { source: decoded.file, dest, ...(cloth ? { cloth: cloth.description } : {}), ...(spec.mesh ? { mesh: spec.mesh } : {}) });
+      const result = await service.call('import', { source: decoded.file, dest, ...(spec.cloth ? { cloth: spec.cloth } : {}), ...(spec.mesh ? { mesh: spec.mesh } : {}) });
       console.log(`[${TAG}] ${key} -> ${dest} (${result.objects.length} objects)`);
       imported.push(key);
       importedModels.set(key, result.objects);

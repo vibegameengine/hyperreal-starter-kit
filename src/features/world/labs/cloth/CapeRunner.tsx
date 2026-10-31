@@ -3,8 +3,9 @@ import { $ref } from 'puerts';
 import { useEffect, useRef } from 'react';
 import { useSkeletalMesh } from '../../../character/entities/ImportedCharacter';
 import { MANNEQUIN_MESHES, mannequinClips } from '../../../character/entities/mannequin';
-import { useFrame } from '../../../../shared/react';
-import capeModel from '../../assets/cloth/cape.glb?cloth=./capeCloth.json';
+import { useClothBehaviour, useFrame } from '../../../../shared/react';
+import capeModel from '../../assets/cloth/cape.glb?cloth=Cloth&pinAbove=z:-2&ramp=8&reach=160&density=0.6';
+import { CAPE_CLOTH, CLOTH_ASSET } from './clothing';
 import { capeFabric } from '../../assets/cloth/fabric';
 
 const CENTRE: readonly [number, number] = [-350, 0];
@@ -36,6 +37,7 @@ export function CapeRunner() {
   const cape = useRef<UE.SkeletalMeshActor | null>(null);
   const seconds = useRef(0);
   const capeMesh = useSkeletalMesh(capeModel, undefined);
+  useClothBehaviour(() => cape.current?.SkeletalMeshComponent, CLOTH_ASSET, CAPE_CLOTH);
 
   useEffect(() => {
     const body = runner.current?.SkeletalMeshComponent;

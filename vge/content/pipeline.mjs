@@ -19,7 +19,6 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameS
 import { basename, join, relative, resolve } from 'node:path';
 import { engine, runtimeDir } from '../tools/engine.mjs';
 import { clipsRequests, importSpec, modelsOf, specOfModelKey } from './characters.mjs';
-import { clothOf } from './cloth.mjs';
 import { createStandbyCooker } from './cooker.mjs';
 import { buildNiagaraSystem } from './niagara.mjs';
 import { buildTerrainLevel } from './terrain.mjs';
@@ -277,20 +276,19 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     const decoded = await decode(sourcePath, join(job.logs, `${name}.glb`));
     // Each version lives in its own content path, so a new version never collides with a mounted one.
     const dest = `/${PLUGIN}/${name}_${job.tag}`;
-    const cloth = clothOf(devDir, spec);
-    const request = { source: decoded.file, dest, ...(cloth ? { cloth: cloth.description } : {}), ...(spec.mesh ? { mesh: spec.mesh } : {}) };
-    return { sourcePath, name, decoded, dest, cloth, request, settings: { mesh: spec.mesh, cloth: spec.cloth } };
+    const request = { source: decoded.file, dest, ...(spec.cloth ? { cloth: spec.cloth } : {}), ...(spec.mesh ? { mesh: spec.mesh } : {}) };
+    return { sourcePath, name, decoded, dest, request, settings: { mesh: spec.mesh, cloth: spec.cloth } };
   }
 
   async function recordModel(prepared, imported, key, job) {
-    const { sourcePath, name, decoded, dest, cloth, settings } = prepared;
+    const { sourcePath, name, decoded, dest, settings } = prepared;
     writeFileSync(join(job.logs, `import-${name}.json`), JSON.stringify(imported, null, 2));
     if (imported.itemError) throw new Error(`${key}: ${imported.itemError}`);
     const clothErrors = (imported.cloth ?? []).flatMap((mesh) => [mesh.error, ...(mesh.sections ?? []).map((section) => section.error)]).filter(Boolean);
     if (clothErrors.length) throw new Error(`cloth of ${key}: ${clothErrors.join('; ')}`);
     const previous = job.assets[key] ?? state.assets[key];
     if (previous) job.retired.push(previous.dest);
-    job.assets[key] = { source: sourcePath, sourceMtimeMs: statSync(sourcePath).mtimeMs, clothMtimeMs: cloth?.mtimeMs, dest, objects: imported.objects, build: job.buildId, decoded: decoded.decoded, spec: { kind: 'model', ...settings } };
+    job.assets[key] = { source: sourcePath, sourceMtimeMs: statSync(sourcePath).mtimeMs, dest, objects: imported.objects, build: job.buildId, decoded: decoded.decoded, spec: { kind: 'model', ...settings } };
     return imported.objects;
   }
 
@@ -985,7 +983,7 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
   const isStale = (spec) => {
     const asset = state.assets[spec.key];
     if (asset?.sourceMtimeMs !== statSync(spec.file).mtimeMs) return true;
-    if ((spec.kind ?? 'model') === 'model' && asset.clothMtimeMs !== clothOf(devDir, spec)?.mtimeMs) return true;    return Object.entries(asset.models ?? {}).some(([model, build]) => state.assets[model]?.build !== build);
+    return Object.entries(asset.models ?? {}).some(([model, build]) => state.assets[model]?.build !== build);
   };
   // Every import of a file, for a save of it: the file itself and its variants (clips, retargets).
   const specsOf = (file) =>

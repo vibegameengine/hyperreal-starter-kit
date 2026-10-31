@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { LabStage } from '../../../../scenes/lab-stage/LabStage';
 import { useSkeletalMesh } from '../../../character/entities/ImportedCharacter';
 import { MANNEQUIN_MESHES, mannequinClips } from '../../../character/entities/mannequin';
-import { useFrame, useHudMessages, useHudState } from '../../../../shared/react';
-import curtainModel from '../../assets/cloth/curtain.glb?cloth=./curtainCloth.json';
-import flagModel from '../../assets/cloth/flag.glb?cloth=./flagCloth.json';
+import { useClothBehaviour, useFrame, useHudMessages, useHudState } from '../../../../shared/react';
+import curtainModel from '../../assets/cloth/curtain.glb?cloth=Cloth&pinAbove=z:253&ramp=10&reach=260&density=0.45';
+import flagModel from '../../assets/cloth/flag.glb?cloth=Cloth&pinBelow=x:5&ramp=12&reach=220&density=0.2';
 import { curtainFabric, flagFabric } from '../../assets/cloth/fabric';
 import metal, { brass } from '../../assets/cloth/metal';
-import { blowWind, clothStats, FABRICS, weave, type Fabric } from './clothing';
+import { blowWind, CLOTH_ASSET, clothStats, CURTAIN_CLOTH, FABRICS, FLAG_CLOTH, woven, type Fabric } from './clothing';
 import { CapeRunner } from './CapeRunner';
 
 const CURTAIN_Y = 450;
@@ -62,10 +62,8 @@ export function Scene() {
   const curtainMesh = useSkeletalMesh(curtainModel, undefined);
   useWalker(walker, curtain, curtainMesh);
 
-  useEffect(() => {
-    weave(flag.current?.SkeletalMeshComponent, fabric);
-    weave(curtain.current?.SkeletalMeshComponent, fabric);
-  }, [fabric, flagMesh, curtainMesh]);
+  useClothBehaviour(() => flag.current?.SkeletalMeshComponent, CLOTH_ASSET, woven(FLAG_CLOTH, fabric));
+  useClothBehaviour(() => curtain.current?.SkeletalMeshComponent, CLOTH_ASSET, woven(CURTAIN_CLOTH, fabric));
 
   useFrame((deltaSeconds) => {
     seconds.current += deltaSeconds;

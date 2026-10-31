@@ -11,7 +11,7 @@ export const LABS: readonly DevLab[] = [
   defineLab({
     id: 'cloth',
     title: 'Cloth',
-    description: 'Chaos Cloth made at import from a model and the cloth settings its import line names: a flag in gusting wind and a curtain a ball pushes through, with wind and fabric changed live.',
+    description: 'Chaos Cloth made at import from a model whose import line names the cloth section and what is pinned, its behaviour set by code: a flag in gusting wind and a curtain a ball pushes through, with wind and fabric changed live.',
     category: 'world',
     load: () => import('../features/world/labs/cloth'),
   }),

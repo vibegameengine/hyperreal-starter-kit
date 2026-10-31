@@ -51,11 +51,24 @@ export function contentSpec(root, file, query) {
     const source = character(from, file);
     return { key: `${keyOf(file)}?retargetFrom=${source.character ?? source.model}`, file, kind: 'retargetFrom', model: keyOf(file), from: source };
   }
-  const settings = modelSettings(params, (path) => keyOf(resolve(dirname(file), path)));
+  const settings = modelSettings(params);
   return { key: settings.query ? `${keyOf(file)}?${settings.query}` : keyOf(file), file, kind: 'model', mesh: settings.mesh, cloth: settings.cloth };
 }
 
-function modelSettings(params, keyOfPath) {
+const CLOTH_PARAMS = ['cloth', 'pinBelow', 'pinAbove', 'ramp', 'reach', 'density'];
+
+function clothSettings(params) {
+  const material = params.get('cloth');
+  if (!material) return undefined;
+  const [pinParam, edgeSide] = params.get('pinBelow') ? ['pinBelow', 'below'] : ['pinAbove', 'above'];
+  const [axis, edge] = (params.get(pinParam) ?? '').split(':');
+  const pin = { axis: axis.toUpperCase(), [edgeSide]: Number(edge), ramp: Number(params.get('ramp') ?? 0) };
+  const density = params.get('density');
+  const section = { material, pin, maxDistance: Number(params.get('reach')), ...(density ? { config: { Density: Number(density) } } : {}) };
+  return { sections: [section] };
+}
+
+function modelSettings(params) {
   const mesh = {};
   const parts = [];
   if (params.get('nanite') === 'off') {
@@ -70,8 +83,8 @@ function modelSettings(params, keyOfPath) {
     });
     parts.push(`lods=${lods}`);
   }
-  const cloth = params.get('cloth') ? keyOfPath(params.get('cloth')) : undefined;
-  if (cloth) parts.push(`cloth=${cloth}`);
+  const cloth = clothSettings(params);
+  if (cloth) for (const name of CLOTH_PARAMS) if (params.has(name)) parts.push(`${name}=${params.get(name)}`);
   return { query: parts.join('&'), mesh: Object.keys(mesh).length ? mesh : undefined, cloth };
 }
 

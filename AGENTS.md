@@ -406,8 +406,11 @@ and the animation units were then fixed in the asset step without C++.
      what is allowed, not a place to grow new formats.
    - How it behaves in the game is business logic, written in TSX/TS code
      beside the code that uses it.
-   - `cloth=<file>.json` in an import line is the defect this rule names; the
-     cloth's behaviour moves into code.
+   - Cloth is the worked example: the import line says which section is cloth,
+     what is pinned, how far it may move and its density
+     (`flag.glb?cloth=Cloth&pinBelow=x:5&ramp=12&reach=220&density=0.2`); its
+     stiffness, damping, drag and collision are set by code
+     (`useClothBehaviour` in `src/shared/react/cloth.ts`).
 
 ## Roles
 
