@@ -178,6 +178,13 @@ TSharedRef<FJsonObject> VgeRetargeter::Retarget(const TSharedPtr<FJsonObject>& R
 		{
 			continue;
 		}
+		if (UAnimSequence* Sequence = Cast<UAnimSequence>(Object))
+		{
+			Sequence->Modify();
+			Sequence->bEnableRootMotion = true;
+			Sequence->bForceRootLock = true;
+			Sequence->PostEditChange();
+		}
 		Packages.AddUnique(Object->GetPackage());
 		TSharedPtr<FJsonObject> Entry = MakeShared<FJsonObject>();
 		Entry->SetStringField(TEXT("path"), Object->GetPathName());

@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, cpSync, createWriteStream, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, createWriteStream, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { Readable } from 'node:stream';
@@ -130,6 +130,7 @@ function syncSources(tag, files, blobs) {
   const manifestFile = join(buildRoot, BUILD_MANIFEST);
   const previous = existsSync(manifestFile) ? JSON.parse(readFileSync(manifestFile, 'utf8')) : {};
   const current = {};
+  const writtenAt = new Date();
   let written = 0;
   files.forEach((file, index) => {
     const target = treePath(file);
@@ -137,6 +138,7 @@ function syncSources(tag, files, blobs) {
     if (previous[target] === blobs[index] && existsSync(join(buildRoot, target))) return;
     mkdirSync(dirname(join(buildRoot, target)), { recursive: true });
     copyFileSync(join(repoRoot, file), join(buildRoot, target));
+    utimesSync(join(buildRoot, target), writtenAt, writtenAt);
     written++;
   });
   const removed = Object.keys(previous).filter((file) => !(file in current));

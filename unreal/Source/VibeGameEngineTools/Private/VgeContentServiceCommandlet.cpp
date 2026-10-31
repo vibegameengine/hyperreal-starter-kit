@@ -8,11 +8,14 @@
 #include "HAL/Runnable.h"
 #include "HAL/RunnableThread.h"
 #include "Misc/CoreDelegates.h"
+#include "VgeComputeBuilder.h"
 #include "VgeFab.h"
 #include "VgeImporter.h"
 #include "VgeMaterialBuilder.h"
 #include "VgeNiagara.h"
 #include "VgeRetargeter.h"
+#include "VgeMotionMatching.h"
+#include "VgeTerrain.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
@@ -63,11 +66,44 @@ namespace
 		{
 			const TSharedPtr<FJsonObject>* Cloth = nullptr;
 			Request->TryGetObjectField(TEXT("cloth"), Cloth);
-			Result = VgeImporter::Import(Request->GetStringField(TEXT("source")), Request->GetStringField(TEXT("dest")), Cloth ? *Cloth : nullptr);
+			const TSharedPtr<FJsonObject>* MeshSettings = nullptr;
+			Request->TryGetObjectField(TEXT("mesh"), MeshSettings);
+			Result = VgeImporter::Import(Request->GetStringField(TEXT("source")), Request->GetStringField(TEXT("dest")), Cloth ? *Cloth : nullptr, MeshSettings ? *MeshSettings : nullptr);
 			if (!Result->GetBoolField(TEXT("saved")))
 			{
 				Result->SetStringField(TEXT("error"), TEXT("nothing was imported; see the service log"));
 			}
+		}
+		else if (Command == TEXT("import-many"))
+		{
+			TArray<VgeImporter::FImportRequest> Requests;
+			for (const TSharedPtr<FJsonValue>& Value : Request->GetArrayField(TEXT("items")))
+			{
+				const TSharedPtr<FJsonObject> Item = Value->AsObject();
+				VgeImporter::FImportRequest& Import = Requests.AddDefaulted_GetRef();
+				Import.Source = Item->GetStringField(TEXT("source"));
+				Import.Dest = Item->GetStringField(TEXT("dest"));
+				const TSharedPtr<FJsonObject>* Cloth = nullptr;
+				if (Item->TryGetObjectField(TEXT("cloth"), Cloth))
+				{
+					Import.Cloth = *Cloth;
+				}
+				const TSharedPtr<FJsonObject>* MeshSettings = nullptr;
+				if (Item->TryGetObjectField(TEXT("mesh"), MeshSettings))
+				{
+					Import.MeshSettings = *MeshSettings;
+				}
+			}
+			TArray<TSharedPtr<FJsonValue>> Reports;
+			for (const TSharedRef<FJsonObject>& Report : VgeImporter::ImportMany(Requests))
+			{
+				if (!Report->GetBoolField(TEXT("saved")))
+				{
+					Report->SetStringField(TEXT("itemError"), TEXT("nothing was imported; see the service log"));
+				}
+				Reports.Add(MakeShared<FJsonValueObject>(Report));
+			}
+			Result->SetArrayField(TEXT("items"), Reports);
 		}
 		else if (Command == TEXT("import-animations"))
 		{
@@ -97,6 +133,10 @@ namespace
 		{
 			Result = VgeMaterialBuilder::BuildMaterialInstance(Request);
 		}
+		else if (Command == TEXT("compute"))
+		{
+			Result = VgeComputeBuilder::Build(Request);
+		}
 		else if (Command == TEXT("niagara-tools"))
 		{
 			Result = VgeNiagara::RunTools(Request);
@@ -112,6 +152,14 @@ namespace
 		else if (Command == TEXT("niagara-constants"))
 		{
 			Result = VgeNiagara::SetConstants(Request);
+		}
+		else if (Command == TEXT("terrain"))
+		{
+			Result = VgeTerrain::Build(Request);
+		}
+		else if (Command == TEXT("motion-matching"))
+		{
+			Result = VgeMotionMatching::Build(Request);
 		}
 		else if (Command == TEXT("delete"))
 		{

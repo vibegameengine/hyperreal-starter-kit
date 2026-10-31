@@ -21,6 +21,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "ComputeFramework",
+			"Enabled": true
+		},
+		{
 			"Name": "VgeLive",
 			"Enabled": true
 		},
@@ -52,6 +56,14 @@
 		},
 		{
 			"Name": "NiagaraFluids",
+			"Enabled": true
+		},
+		{
+			"Name": "PoseSearch",
+			"Enabled": true
+		},
+		{
+			"Name": "AnimationWarping",
 			"Enabled": true
 		}
 	]

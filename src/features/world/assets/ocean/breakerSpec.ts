@@ -1,0 +1,12 @@
+export const BREAKER_CAPACITY = 16384;
+export const STATION_RES = 128;
+export const STATION_SPACING = 0.6;
+export const LIP_PROFILE_VERTICES = 20;
+export const CREST_COLUMNS = 256;
+export const CREST_TEXELS = 6;
+export const CREST_ROWS = BREAKER_CAPACITY / CREST_COLUMNS;
+export const LIP_TAPER_STATIONS = 8;
+export const LIP_LINK_JUMP = 0.35;
+export const LIP_LINK_GAP = 3;
+export const LIP_SMOOTH_STATIONS = 4;
+export const LIP_GONE = 1.3;

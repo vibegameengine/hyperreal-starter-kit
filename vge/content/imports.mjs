@@ -1,6 +1,6 @@
 // What the game's code imports of the content the pipeline builds, read from the source files themselves: every model
-// file import (with its query, as content/characters.mjs contentSpec keys it), every material module and every
-// Niagara module. A build of something no file imports any more is removed (content/pipeline.mjs removeUnused), so
+// file import (with its query, as content/characters.mjs contentSpec keys it), every material, Niagara, terrain,
+// motion matching and compute module. A build of something no file imports any more is removed (content/pipeline.mjs removeUnused), so
 // deleting an import from the code frees what it took on disk. The source files are read, not the module graph of the
 // running game: a lab that is not open still keeps what it imports.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -22,7 +22,7 @@ function* sourceFiles(dir) {
 }
 
 // `root` is the checkout (keys are paths relative to it), `srcDir` the folder of the game's code. Returns the keys of
-// the model imports and the models they are built on, the keys of the material and Niagara modules imported, and the
+// the model imports and the models they are built on, the keys of the material, Niagara and terrain modules imported, and the
 // files that could not be read (one being saved with a syntax error): with any, what is imported is not known.
 export async function importedContent({ root, srcDir }) {
   await init;
@@ -50,7 +50,7 @@ export async function importedContent({ root, srcDir }) {
         for (const model of modelsOf(spec)) models.add(model);
         continue;
       }
-      if (!/\.(material|niagara)(\.[jt]sx?)?$/.test(path)) continue;
+      if (!/\.(material|niagara|terrain|motion|compute)(\.[jt]sx?)?$/.test(path)) continue;
       const found = MODULE_EXTENSIONS.map((extension) => target + extension).find((candidate) => existsSync(candidate) && CODE.test(candidate));
       if (found) modules.add(keyOf(found));
     }

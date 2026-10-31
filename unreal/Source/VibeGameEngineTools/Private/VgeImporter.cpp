@@ -180,16 +180,82 @@ TSharedRef<FJsonObject> VgeImporter::ImportAnimations(const FString& Source, con
 	return SaveAndReport(Imported, Source, Dest);
 }
 
-TSharedRef<FJsonObject> VgeImporter::Import(const FString& Source, const FString& Dest, const TSharedPtr<FJsonObject>& Cloth)
+namespace
 {
-	const TArray<UObject*> Imported = RunImportTask(Source, Dest, nullptr);
+	void ApplyMeshSettings(UStaticMesh* Mesh, const TSharedPtr<FJsonObject>& MeshSettings)
+	{
+		bool bNanite = true;
+		if (MeshSettings)
+		{
+			MeshSettings->TryGetBoolField(TEXT("nanite"), bNanite);
+		}
+		FMeshNaniteSettings Settings = Mesh->GetNaniteSettings();
+		Settings.bEnabled = bNanite;
+		Mesh->SetNaniteSettings(Settings);
 
+		const TArray<TSharedPtr<FJsonValue>>* Lods = nullptr;
+		if (bNanite || !MeshSettings || !MeshSettings->TryGetArrayField(TEXT("lods"), Lods))
+		{
+			return;
+		}
+		Mesh->SetNumSourceModels(Lods->Num() + 1);
+		for (int32 Index = 0; Index < Lods->Num(); ++Index)
+		{
+			const TSharedPtr<FJsonObject> Lod = (*Lods)[Index]->AsObject();
+			FStaticMeshSourceModel& Model = Mesh->GetSourceModel(Index + 1);
+			Model.ReductionSettings.PercentTriangles = static_cast<float>(Lod->GetNumberField(TEXT("triangles")));
+			Model.ScreenSize.Default = static_cast<float>(Lod->GetNumberField(TEXT("screenSize")));
+		}
+		Mesh->SetAutoComputeLODScreenSize(false);
+	}
+}
+
+namespace
+{
+	TSharedRef<FJsonObject> FinishImport(const TArray<UObject*>& Imported, const FString& Source, const FString& Dest, const TSharedPtr<FJsonObject>& Cloth, const TSharedPtr<FJsonObject>& MeshSettings);
+}
+
+TSharedRef<FJsonObject> VgeImporter::Import(const FString& Source, const FString& Dest, const TSharedPtr<FJsonObject>& Cloth, const TSharedPtr<FJsonObject>& MeshSettings)
+{
+	return FinishImport(RunImportTask(Source, Dest, nullptr), Source, Dest, Cloth, MeshSettings);
+}
+
+TArray<TSharedRef<FJsonObject>> VgeImporter::ImportMany(const TArray<FImportRequest>& Requests)
+{
+	TArray<UAssetImportTask*> Tasks;
+	for (const FImportRequest& Request : Requests)
+	{
+		UAssetImportTask* Task = NewObject<UAssetImportTask>();
+		Task->AddToRoot();
+		Task->Filename = Request.Source;
+		Task->DestinationPath = Request.Dest;
+		Task->bAutomated = true;
+		Task->bReplaceExisting = true;
+		Task->bSave = false;
+		Task->bAsync = true;
+		Tasks.Add(Task);
+	}
+	FAssetToolsModule::GetModule().Get().ImportAssetTasks(Tasks);
+	TArray<TSharedRef<FJsonObject>> Reports;
+	for (int32 Index = 0; Index < Tasks.Num(); ++Index)
+	{
+		const FImportRequest& Request = Requests[Index];
+		Reports.Add(FinishImport(Tasks[Index]->GetObjects(), Request.Source, Request.Dest, Request.Cloth, Request.MeshSettings));
+		Tasks[Index]->RemoveFromRoot();
+	}
+	return Reports;
+}
+
+namespace
+{
+TSharedRef<FJsonObject> FinishImport(const TArray<UObject*>& Imported, const FString& Source, const FString& Dest, const TSharedPtr<FJsonObject>& Cloth, const TSharedPtr<FJsonObject>& MeshSettings)
+{
 	// Material instances first, so meshes built below already see their final materials.
 	for (UObject* Object : Imported)
 	{
 		UMaterialInstanceConstant* Instance = Cast<UMaterialInstanceConstant>(Object);
 		UMaterial* InterchangeMaster = Instance && Instance->Parent ? Instance->Parent->GetMaterial() : nullptr;
-		if (UMaterial* ProjectMaster = FindProjectMaster(InterchangeMaster))
+		if (UMaterial* ProjectMaster = VgeImporter::FindProjectMaster(InterchangeMaster))
 		{
 			Instance->Modify();
 			FMaterialInstanceBasePropertyOverrides Overrides = InheritedBaseOverrides(Instance, Cast<UMaterialInstance>(Instance->Parent));
@@ -208,9 +274,7 @@ TSharedRef<FJsonObject> VgeImporter::Import(const FString& Source, const FString
 		if (UStaticMesh* Mesh = Cast<UStaticMesh>(Object))
 		{
 			Mesh->Modify();
-			FMeshNaniteSettings Settings = Mesh->GetNaniteSettings();
-			Settings.bEnabled = true;
-			Mesh->SetNaniteSettings(Settings);
+			ApplyMeshSettings(Mesh, MeshSettings);
 			Mesh->PostEditChange();
 		}
 	}
@@ -242,6 +306,7 @@ TSharedRef<FJsonObject> VgeImporter::Import(const FString& Source, const FString
 		Report->SetArrayField(TEXT("cloth"), Cloths);
 	}
 	return Report;
+}
 }
 
 int32 VgeImporter::DeleteContentPath(const FString& ContentPath)

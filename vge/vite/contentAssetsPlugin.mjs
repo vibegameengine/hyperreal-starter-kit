@@ -9,6 +9,7 @@
 import { existsSync } from 'node:fs';
 import { contentSpec } from '../content/characters.mjs';
 import { CLOTH_SUFFIX, clothFileOf, modelsOfClothFile } from '../content/cloth.mjs';
+import { MESH_SETTINGS_SUFFIX, meshSettingsFileOf, modelsOfMeshSettingsFile } from '../content/meshSettings.mjs';
 
 const MODEL = /\.(glb|gltf|fbx|wav|mp3|ogg|flac|opus|aif|aiff)$/i;
 const CONTENT_MODULE = '/src/shared/engine/content.ts';
@@ -27,14 +28,16 @@ export function contentAssetsPlugin({ root, onImport, onChange }) {
       if (!MODEL.test(file)) return;
       const spec = contentSpec(root, file, query);
       if (spec.kind === 'model' && existsSync(clothFileOf(file))) this.addWatchFile(clothFileOf(file));
+      if (spec.kind === 'model' && existsSync(meshSettingsFileOf(file))) this.addWatchFile(meshSettingsFileOf(file));
       const objects = await onImport(spec);
       const args = objects ? `${JSON.stringify(spec.key)}, ${JSON.stringify(objects)}` : JSON.stringify(spec.key);
       return { code: `import { contentAsset } from '${CONTENT_MODULE}';\nexport default contentAsset(${args});\n`, moduleType: 'js' };
     },
     // A saved model rebuilds its asset; the module itself stays (its handle is the same), so no code reloads.
     hotUpdate({ file, modules }) {
-      if (file.endsWith(CLOTH_SUFFIX)) {
-        const model = modelsOfClothFile(file).find((candidate) => existsSync(candidate));
+      const settingsOf = file.endsWith(CLOTH_SUFFIX) ? modelsOfClothFile : file.endsWith(MESH_SETTINGS_SUFFIX) ? modelsOfMeshSettingsFile : null;
+      if (settingsOf) {
+        const model = settingsOf(file).find((candidate) => existsSync(candidate));
         if (model) onChange?.(model);
         return [];
       }

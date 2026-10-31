@@ -1,5 +1,5 @@
 import type * as UE from 'ue';
-import type { Ref } from 'react';
+import type { ReactNode, Ref } from 'react';
 import { param } from '../../../shared/react';
 
 
@@ -34,15 +34,19 @@ export function setLocomotion(graph: UE.VgeAnimInstance | null, movement: UE.Cha
   graph.SetBool('falling', movement.IsFalling());
 }
 
-export function MannequinLocomotion({ graph, clips = MANNY_LOCOMOTION }: { graph: Ref<UE.VgeAnimInstance>; clips?: LocomotionClips }) {
+export interface MannequinLocomotionProps {
+  graph: Ref<UE.VgeAnimInstance>;
+  clips?: LocomotionClips;
+  ground?: ReactNode;
+}
+
+export function MannequinLocomotion({ graph, clips = MANNY_LOCOMOTION, ground }: MannequinLocomotionProps) {
   return (
     <animGraph ref={graph}>
       <inertialize>
         <slot name="DefaultSlot">
           <stateMachine entry="locomotion">
-            <state name="locomotion">
-              <blendSpace blendSpace={clips.idleWalkRun} x={0} y={param('speed')} />
-            </state>
+            <state name="locomotion">{ground ?? <blendSpace blendSpace={clips.idleWalkRun} x={0} y={param('speed')} />}</state>
             <state name="jump">
               <clip sequence={clips.jump} loop={false} />
             </state>

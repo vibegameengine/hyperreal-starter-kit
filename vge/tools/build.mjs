@@ -11,17 +11,21 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { createBuilder, createServer } from 'vite';
-import { importSpec, modelsOf } from '../content/characters.mjs';
+import { importSpec, modelsOf, specOfModelKey } from '../content/characters.mjs';
 import { createContentService } from '../content/service.mjs';
 import { assetName, createDecoder } from '../content/decode.mjs';
 import { createMaterialModules, handleModule } from '../content/materials.mjs';
 import { buildNiagaraSystem, createNiagaraModules, NIAGARA_MODULE, niagaraHandleModule } from '../content/niagara.mjs';
+import { buildTerrainLevel, createTerrainModules, TERRAIN_MODULE, terrainHandleModule } from '../content/terrain.mjs';
+import { buildMotionMatching, createMotionModules, MOTION_MODULE, motionHandleModule } from '../content/motion.mjs';
+import { buildComputeGraph, COMPUTE_MODULE, computeHandleModule, createComputeModules } from '../content/compute.mjs';
 import { contentAssetsPlugin } from '../vite/contentAssetsPlugin.mjs';
 import { materialsEnvironment, uiKitClientPlugins, unrealResolve } from '../vite/environments.mjs';
 import { materialAssetsPlugin } from '../vite/materialAssetsPlugin.mjs';
 import { reactCompilerPlugin } from '../vite/reactCompiler.mjs';
 import { prepareSound } from '../content/sound.mjs';
 import { clothOf } from '../content/cloth.mjs';
+import { meshSettingsOf } from '../content/meshSettings.mjs';
 import { engine, project, repoRoot, runtimeDir, unrealRoot } from './engine.mjs';
 import { ensureShipping } from './runtime.mjs';
 import { refuseWhileOwnDevServerRuns, step } from './steps.mjs';
@@ -74,7 +78,8 @@ function importModel(file, key) {
     importing.set(key, (async () => {
       const decoded = await decode(file, join(workDir, key.replace(/\.[^.]+$/, '.glb')));
       const cloth = clothOf(file);
-      const result = await service.call('import', { source: decoded.file, dest: destOf(key), ...(cloth ? { cloth: cloth.description } : {}) });
+      const meshSettings = meshSettingsOf(file);
+      const result = await service.call('import', { source: decoded.file, dest: destOf(key), ...(cloth ? { cloth: cloth.description } : {}), ...(meshSettings ? { mesh: meshSettings.description } : {}) });
       console.log(`[${TAG}] ${key} -> ${destOf(key)} (${result.objects.length} objects)`);
       imported.push(key);
       importedModels.set(key, result.objects);
@@ -150,6 +155,69 @@ async function buildNiagaraModule(file, key) {
   return niagaraHandleModule(exports, paths);
 }
 
+const terrainModules = createTerrainModules({ materials: materialModules, folderRoot: (key) => materialFolderOf(key) });
+const terrainLevels = [];
+async function buildTerrainModule(file, key) {
+  const exports = await terrainModules.describe(file);
+  const paths = {};
+  for (const entry of exports) {
+    for (const asset of entry.materials) {
+      if (builtMaterials.has(asset.path)) continue;
+      await service.call(asset.kind === 'instance' ? 'material-instance' : 'material', asset.request);
+      builtMaterials.add(asset.path);
+    }
+    for (const grass of entry.request.grass ?? []) await importModel(join(devDir, grass.model), grass.model);
+    await buildTerrainLevel(service, entry, { objectsOf: (model) => importedModels.get(model) });
+    console.log(`[${TAG}] ${key} -> ${entry.path}`);
+    paths[entry.exportKey] = entry.path;
+    terrainLevels.push(entry.path.replace(/\.[^./]+$/, ''));
+  }
+  imported.push(key);
+  return terrainHandleModule(exports, paths);
+}
+
+const importedSpecs = new Map();
+async function importContent(spec) {
+  if (importedSpecs.has(spec.key)) return importedSpecs.get(spec.key);
+  for (const model of modelsOf(spec)) await importModel(join(devDir, model), model);
+  if (spec.kind === 'sound') return importSound(spec);
+  if (spec.kind === 'model') return importModel(spec.file, spec.key);
+  const dest = `${destOf(spec.key.replace(/\?.*$/, ''))}_${spec.kind === 'clips' ? (spec.retarget ? `On_${spec.retarget.character ?? assetName(spec.retarget.model)}` : 'Clips') : `From_${spec.from.character ?? assetName(spec.from.model)}`}`;
+  const objects = await importSpec(service, spec, dest, { modelObjects: (key) => importedModels.get(key) });
+  console.log(`[${TAG}] ${spec.key} -> ${dest} (${objects.length} objects)`);
+  imported.push(spec.key);
+  importedSpecs.set(spec.key, objects);
+  return objects;
+}
+
+const motionModules = createMotionModules({ materials: materialModules, folderRoot: (key) => materialFolderOf(key) });
+async function buildMotionModule(file, key) {
+  const exports = await motionModules.describe(file);
+  const paths = {};
+  for (const entry of exports) {
+    const clipObjects = new Map();
+    for (const model of entry.request.models) clipObjects.set(model, await importContent(specOfModelKey(devDir, model)));
+    const built = await buildMotionMatching(service, entry, { objectsOf: (model) => clipObjects.get(model) });
+    console.log(`[${TAG}] ${key} -> ${built.path}`);
+    paths[entry.exportKey] = built.path;
+  }
+  imported.push(key);
+  return motionHandleModule(exports, paths);
+}
+
+const computeModules = createComputeModules({ materials: materialModules, folderRoot: (key) => materialFolderOf(key) });
+async function buildComputeModule(file, key) {
+  const exports = await computeModules.describe(file);
+  const paths = {};
+  for (const entry of exports) {
+    const built = await buildComputeGraph(service, entry);
+    console.log(`[${TAG}] ${key} -> ${built.path}`);
+    paths[entry.exportKey] = built.path;
+  }
+  imported.push(key);
+  return computeHandleModule(exports, paths);
+}
+
 const builder = await createBuilder({
   configFile: false,
   root: devDir,
@@ -161,19 +229,13 @@ const builder = await createBuilder({
     uiKitClientPlugins(),
     contentAssetsPlugin({
       root: devDir,
-      onImport: async (spec) => {
-        for (const model of modelsOf(spec)) await importModel(join(devDir, model), model);
-        if (spec.kind === 'sound') return importSound(spec);
-        if (spec.kind === 'model') return importModel(spec.file, spec.key);
-        const dest = `${destOf(spec.key.replace(/\?.*$/, ''))}_${spec.kind === 'clips' ? (spec.retarget ? `On_${spec.retarget.character ?? assetName(spec.retarget.model)}` : 'Clips') : `From_${spec.from.character ?? assetName(spec.from.model)}`}`;
-        const objects = await importSpec(service, spec, dest, { modelObjects: (key) => importedModels.get(key) });
-        console.log(`[${TAG}] ${spec.key} -> ${dest} (${objects.length} objects)`);
-        imported.push(spec.key);
-        return objects;
-      },
+      onImport: importContent,
     }),
     materialAssetsPlugin({ root: devDir, onImport: buildMaterialModule }),
     materialAssetsPlugin({ root: devDir, onImport: buildNiagaraModule, pattern: NIAGARA_MODULE, name: 'vge:niagara-assets' }),
+    materialAssetsPlugin({ root: devDir, onImport: buildTerrainModule, pattern: TERRAIN_MODULE, name: 'vge:terrain-assets' }),
+    materialAssetsPlugin({ root: devDir, onImport: buildMotionModule, pattern: MOTION_MODULE, name: 'vge:motion-assets' }),
+    materialAssetsPlugin({ root: devDir, onImport: buildComputeModule, pattern: COMPUTE_MODULE, name: 'vge:compute-assets' }),
   ],
   environments: {
     unreal: {
@@ -236,6 +298,7 @@ step(TAG, 'shipping game', engine().runUat, [
   '-nodebuginfo',
   '-archive',
   `-archivedirectory="${archive}"`,
+  ...(terrainLevels.length ? [`-MapsToCook=${terrainLevels.join('+')}`] : []),
   '-unattended',
 ]);
 console.log(`[${TAG}] ${join(archive, 'Windows', 'VibeGameEngine.exe')} in ${((Date.now() - started) / 60000).toFixed(1)} min`);

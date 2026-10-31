@@ -39,7 +39,7 @@ function orbitFrom(location: Vector3, rotation: Vector3, focus?: Vector3): Orbit
   return { focus: [location[0] + forward[0] * along, location[1] + forward[1] * along, location[2] + forward[2] * along], yaw, pitch, distance: along };
 }
 
-function withoutMotionBlur(component: UE.CameraComponent) {
+export function withoutMotionBlur(component: UE.CameraComponent) {
   const settings = component.PostProcessSettings;
   settings.bOverride_MotionBlurAmount = true;
   settings.MotionBlurAmount = 0;

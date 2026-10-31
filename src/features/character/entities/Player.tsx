@@ -3,9 +3,11 @@ import { $ref, $unref } from 'puerts';
 import { useEffect, useRef } from 'react';
 import { world } from '../../../shared/engine/world';
 import { isMouseCaptured } from '../../../shared/engine/mouse';
-import { useFrame, useMouseCapture } from '../../../shared/react';
+import { useFrame, useMotionMatchingClass, useMouseCapture } from '../../../shared/react';
+import type { MotionMatchingRef } from '../../../shared/motion';
 import type { Vector3 } from '../../../shared/react/props';
 import { MANNEQUIN_MESHES, type MannequinVariant } from './mannequin';
+import { GroundedLegs } from './GroundedLegs';
 import { MannequinLocomotion, setLocomotion, type LocomotionClips } from './MannequinLocomotion';
 
 const CAPSULE_HALF_HEIGHT = 88;
@@ -28,6 +30,9 @@ const stick = (controller: UE.PlayerController, key: UE.Key) => {
 };
 const pressed = (controller: UE.PlayerController, key: UE.Key) => (controller.IsInputKeyDown(key) ? 1 : 0);
 
+const BLEND_SPACE_RUN_SPEED = 450;
+const MOTION_MATCHING_JOG_SPEED = 570;
+
 export interface PlayerLook {
   mesh: string | UE.SkeletalMesh;
   clips: LocomotionClips;
@@ -37,11 +42,13 @@ export interface PlayerProps {
   at: Vector3;
   variant?: MannequinVariant;
   look?: PlayerLook;
+  motion?: MotionMatchingRef;
 }
 
-export function Player({ at, variant = 'manny', look }: PlayerProps) {
+export function Player({ at, variant = 'manny', look, motion }: PlayerProps) {
   const character = useRef<UE.Character>(null);
   const animation = useRef<UE.VgeAnimInstance>(null);
+  const motionClass = useMotionMatchingClass(motion);
   useEffect(() => {
     UE.GameplayStatics.GetPlayerController(world, 0).Possess(character.current!);
   }, []);
@@ -88,9 +95,13 @@ export function Player({ at, variant = 'manny', look }: PlayerProps) {
         location={at}
         useControllerRotationYaw={false}
         mesh={{ skeletalMeshAsset: look?.mesh ?? MANNEQUIN_MESHES[variant], location: [0, 0, -CAPSULE_HALF_HEIGHT], rotation: [0, -90, 0] }}
-        characterMovement={{ orientRotationToMovement: true, rotationRate: [0, 720, 0], maxWalkSpeed: 450, jumpZVelocity: 520 }}
+        characterMovement={{ orientRotationToMovement: true, rotationRate: [0, 720, 0], jumpZVelocity: 520, maxWalkSpeed: motion ? MOTION_MATCHING_JOG_SPEED : BLEND_SPACE_RUN_SPEED }}
       >
-        <MannequinLocomotion graph={animation} clips={look?.clips} />
+        <MannequinLocomotion graph={animation} clips={look?.clips} ground={motionClass && (
+            <GroundedLegs>
+              <linkedGraph instanceClass={motionClass} />
+            </GroundedLegs>
+          )} />
         <springArmComponent location={[0, 0, CAMERA_TARGET_HEIGHT]} targetArmLength={CAMERA_DISTANCE} usePawnControlRotation doCollisionTest={false}>
           <cameraComponent socket="SpringEndpoint" constrainAspectRatio={false} />
         </springArmComponent>

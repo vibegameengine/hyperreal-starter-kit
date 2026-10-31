@@ -630,9 +630,16 @@ TSharedRef<FJsonObject> VgeMaterialBuilder::BuildMaterialInstance(const TSharedP
 	};
 	auto Check = [&](EMaterialParameterType Type, const FString& Name, const TCHAR* Kind) -> bool
 	{
-		if (!ParameterNames(Type).Contains(FName(*Name)))
+		const TSet<FName> Names = ParameterNames(Type);
+		if (!Names.Contains(FName(*Name)))
 		{
-			Error = FString::Printf(TEXT("%s: %s has no %s parameter '%s'"), *Path, *ParentPath, Kind, *Name);
+			TArray<FString> Known;
+			for (const FName& Known_ : Names)
+			{
+				Known.Add(Known_.ToString());
+			}
+			Known.Sort();
+			Error = FString::Printf(TEXT("%s: %s has no %s parameter '%s' (%s parameters: %s)"), *Path, *ParentPath, Kind, *Name, Kind, *FString::Join(Known, TEXT(", ")));
 			return false;
 		}
 		return true;

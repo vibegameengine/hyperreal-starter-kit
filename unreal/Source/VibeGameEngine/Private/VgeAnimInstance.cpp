@@ -11,6 +11,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Curves/CurveFloat.h"
 #include "Dom/JsonObject.h"
+#include "JsonObjectConverter.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
@@ -486,6 +487,58 @@ namespace
 		return false;
 	}
 
+	// control
+	EPropKind ControlKind(const FString& Prop)
+	{
+		return Prop == TEXT("node") ? EPropKind::Text : EPropKind::Json;
+	}
+	bool ControlWrite(FVgeAnimGraphNode& Node, const FString& Prop, const FPropValue& Value, UAnimInstance*)
+	{
+		FVgeAnimNode_SkeletalControl* Control = As<FVgeAnimNode_SkeletalControl>(Node);
+		if (Prop == TEXT("node"))
+		{
+			const UScriptStruct* Struct = LoadObject<UScriptStruct>(nullptr, *Value.Text);
+			if (!Control->SetControlStruct(Struct))
+			{
+				UE_LOG(LogVgeAnim, Error, TEXT("control#%s.node: '%s' is not a skeletal control node struct"), *Node.Id, *Value.Text);
+			}
+			return true;
+		}
+		FAnimNode_SkeletalControlBase* Target = Control->Get();
+		const UScriptStruct* Struct = Control->Control.GetScriptStruct();
+		const FProperty* Property = Struct ? Struct->FindPropertyByName(FName(*Prop)) : nullptr;
+		if (!Target || !Property)
+		{
+			UE_LOG(LogVgeAnim, Error, TEXT("control#%s: %s has no field '%s'"), *Node.Id, Struct ? *Struct->GetName() : TEXT("no node"), *Prop);
+			return false;
+		}
+		void* Address = Property->ContainerPtrToValuePtr<void>(Target);
+		if (Value.Json.IsValid())
+		{
+			if (!FJsonObjectConverter::JsonValueToUProperty(Value.Json, const_cast<FProperty*>(Property), Address, 0, 0))
+			{
+				UE_LOG(LogVgeAnim, Error, TEXT("control#%s.%s: the value does not fit %s"), *Node.Id, *Prop, *Property->GetCPPType());
+			}
+			return true;
+		}
+		if (const FNumericProperty* Numeric = CastField<FNumericProperty>(Property))
+		{
+			if (Numeric->IsFloatingPoint())
+			{
+				Numeric->SetFloatingPointPropertyValue(Address, Value.Number);
+			}
+			else
+			{
+				Numeric->SetIntPropertyValue(Address, static_cast<int64>(Value.Number));
+			}
+		}
+		else if (const FBoolProperty* Bool = CastField<FBoolProperty>(Property))
+		{
+			Bool->SetPropertyValue(Address, Value.Number != 0.0);
+		}
+		return false;
+	}
+
 	void ReadVector(const TSharedPtr<FJsonObject>& Object, const TCHAR* Field, FVector& OutVector)
 	{
 		const TArray<TSharedPtr<FJsonValue>>* Elements;
@@ -739,6 +792,7 @@ namespace
 	const FName NodeType_Slot(TEXT("slot"));
 	const FName NodeType_TwoBoneIK(TEXT("twoBoneIK"));
 	const FName NodeType_AnimDynamics(TEXT("animDynamics"));
+	const FName NodeType_Control(TEXT("control"));
 
 	const TArray<FNodeType>& NodeTypes()
 	{
@@ -756,6 +810,7 @@ namespace
 			{ NodeType_Slot, FAnimNode_Slot::StaticStruct(), SlotKind, SlotWrite },
 			{ NodeType_TwoBoneIK, FVgeAnimNode_TwoBoneIK::StaticStruct(), TwoBoneIKKind, TwoBoneIKWrite },
 			{ NodeType_AnimDynamics, FVgeAnimNode_AnimDynamics::StaticStruct(), AnimDynamicsKind, AnimDynamicsWrite },
+			{ NodeType_Control, FVgeAnimNode_SkeletalControl::StaticStruct(), ControlKind, ControlWrite },
 		};
 		return Types;
 	}
@@ -781,6 +836,7 @@ FAnimNode_Base* FVgeAnimGraphNode::Base()
 	if (Type == NodeType_Slot) return As<FAnimNode_Slot>(*this);
 	if (Type == NodeType_TwoBoneIK) return As<FVgeAnimNode_TwoBoneIK>(*this);
 	if (Type == NodeType_AnimDynamics) return As<FVgeAnimNode_AnimDynamics>(*this);
+	if (Type == NodeType_Control) return As<FVgeAnimNode_SkeletalControl>(*this);
 	return nullptr;
 }
 
@@ -866,9 +922,17 @@ int32 FVgeAnimInstanceProxy::AddNode(const TSharedPtr<FJsonObject>& InDescriptio
 	const TSharedPtr<FJsonObject>* Props;
 	if (InDescription->TryGetObjectField(TEXT("props"), Props))
 	{
+		const TSharedPtr<FJsonValue> ControlNode = Type->Name == NodeType_Control ? (*Props)->TryGetField(TEXT("node")) : nullptr;
+		if (ControlNode.IsValid())
+		{
+			WriteProp(Index, TEXT("node"), ControlNode, LiveOwner);
+		}
 		for (const TPair<FString, TSharedPtr<FJsonValue>>& Prop : (*Props)->Values)
 		{
-			WriteProp(Index, Prop.Key, Prop.Value, LiveOwner);
+			if (!(ControlNode.IsValid() && Prop.Key == TEXT("node")))
+			{
+				WriteProp(Index, Prop.Key, Prop.Value, LiveOwner);
+			}
 		}
 	}
 	return Index;
@@ -938,13 +1002,14 @@ void FVgeAnimInstanceProxy::LinkChildren(int32 InNode, UAnimInstance* InLiveOwne
 			Linked->Relink(InLiveOwner);
 		}
 	}
-	else if (Node.Type == NodeType_Inertialize || Node.Type == NodeType_State || Node.Type == NodeType_Slot || Node.Type == NodeType_TwoBoneIK || Node.Type == NodeType_AnimDynamics)
+	else if (Node.Type == NodeType_Inertialize || Node.Type == NodeType_State || Node.Type == NodeType_Slot || Node.Type == NodeType_TwoBoneIK || Node.Type == NodeType_AnimDynamics || Node.Type == NodeType_Control)
 	{
 		ExpectChildren(1, TEXT("one pose"));
 		FPoseLink* Source = Node.Type == NodeType_Inertialize ? &As<FVgeAnimNode_Inertialization>(Node)->Source
 			: Node.Type == NodeType_State ? &As<FVgeAnimNode_State>(Node)->Source
 			: Node.Type == NodeType_Slot ? &As<FAnimNode_Slot>(Node)->Source
 			: Node.Type == NodeType_TwoBoneIK ? &As<FVgeAnimNode_TwoBoneIK>(Node)->Source()
+			: Node.Type == NodeType_Control ? &As<FVgeAnimNode_SkeletalControl>(Node)->Source()
 			: &As<FVgeAnimNode_AnimDynamics>(Node)->Source();
 		Source->SetLinkNode(ChildAt(0));
 	}
@@ -1100,7 +1165,15 @@ bool FVgeAnimInstanceProxy::WriteProp(int32 InNode, const FString& InProp, const
 		Value.Text = InValue->AsString();
 		return Type->Write(Node, InProp, Value, InLiveOwner);
 	case EPropKind::Json:
+	{
+		FName Variable;
+		if (Node.Type == NodeType_Control && BoundVariable(InValue, Variable))
+		{
+			Bindings.Add({ InNode, InProp, INDEX_NONE, Variable });
+			return false;
+		}
 		Value.Json = InValue;
+	}
 		return Type->Write(Node, InProp, Value, InLiveOwner);
 	default:
 		return false;

@@ -14,13 +14,18 @@
 // An asset pack added from Fab (content/fab.mjs) is cooked and packaged the same way into a container of its own
 // (buildPack below).
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 import { engine, runtimeDir } from '../tools/engine.mjs';
-import { importSpec, modelsOf } from './characters.mjs';
+import { importSpec, modelsOf, specOfModelKey } from './characters.mjs';
 import { clothOf } from './cloth.mjs';
+import { meshSettingsOf } from './meshSettings.mjs';
 import { createStandbyCooker } from './cooker.mjs';
 import { buildNiagaraSystem } from './niagara.mjs';
+import { buildTerrainLevel } from './terrain.mjs';
+import { buildMotionMatching } from './motion.mjs';
+import { buildComputeGraph } from './compute.mjs';
 import { assetName, createDecoder } from './decode.mjs';
 import { prepareSound } from './sound.mjs';
 import { createContentService } from './service.mjs';
@@ -37,6 +42,14 @@ const COOKERS = 3;
 export function createContentPipeline({ projectDir, release = 'dev', log = console.log }) {
   const project = resolve(projectDir, 'VibeGameEngine.uproject');
   const devDir = resolve(projectDir, '..');
+  const modelKeysOf = (entry) => [...(entry.request?.grass ?? []).map((grass) => grass.model), ...(entry.request?.models ?? [])].map((model) => specOfModelKey(devDir, model).key);
+  const versionByModels = (entry) => {
+    const models = modelKeysOf(entry);
+    if (!models.length) return entry;
+    const builds = createHash('sha1').update(JSON.stringify(models.map((model) => state.assets[model]?.build ?? 0))).digest('hex').slice(0, 8);
+    const folder = `${entry.folder}_${builds}`;
+    return { ...entry, folder, path: entry.path.split(entry.folder).join(folder) };
+  };
   const pluginDir = resolve(projectDir, 'Plugins', PLUGIN);
   const contentDir = join(pluginDir, 'Content');
   // Each build cooks into a folder of its own under the project's Saved, not the plugin's: a cooked texture's path
@@ -229,21 +242,46 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
   }
 
   // A model file decoded and imported into its own content folder; the version it replaces is deleted.
-  async function importModel(sourcePath, key, job) {
-    const { buildId, tag, logs } = job;
+  async function prepareModel(sourcePath, job) {
     const name = assetName(sourcePath);
-    const decoded = await decode(sourcePath, join(logs, `${name}.glb`));
+    const decoded = await decode(sourcePath, join(job.logs, `${name}.glb`));
     // Each version lives in its own content path, so a new version never collides with a mounted one.
-    const previous = job.assets[key] ?? state.assets[key];
-    const dest = `/${PLUGIN}/${name}_${tag}`;
+    const dest = `/${PLUGIN}/${name}_${job.tag}`;
     const cloth = clothOf(sourcePath);
-    const imported = await service.call('import', { source: decoded.file, dest, ...(cloth ? { cloth: cloth.description } : {}) });
-    writeFileSync(join(logs, `import-${name}.json`), JSON.stringify(imported, null, 2));
+    const meshSettings = meshSettingsOf(sourcePath);
+    const request = { source: decoded.file, dest, ...(cloth ? { cloth: cloth.description } : {}), ...(meshSettings ? { mesh: meshSettings.description } : {}) };
+    return { sourcePath, name, decoded, dest, cloth, meshSettings, request };
+  }
+
+  async function recordModel(prepared, imported, key, job) {
+    const { sourcePath, name, decoded, dest, cloth, meshSettings } = prepared;
+    writeFileSync(join(job.logs, `import-${name}.json`), JSON.stringify(imported, null, 2));
+    if (imported.itemError) throw new Error(`${key}: ${imported.itemError}`);
     const clothErrors = (imported.cloth ?? []).flatMap((mesh) => [mesh.error, ...(mesh.sections ?? []).map((section) => section.error)]).filter(Boolean);
     if (clothErrors.length) throw new Error(`cloth of ${key}: ${clothErrors.join('; ')}`);
+    const previous = job.assets[key] ?? state.assets[key];
     if (previous) await service.call('delete', { path: previous.dest });
-    job.assets[key] = { source: sourcePath, sourceMtimeMs: statSync(sourcePath).mtimeMs, clothMtimeMs: cloth?.mtimeMs, dest, objects: imported.objects, build: buildId, decoded: decoded.decoded, spec: { kind: 'model' } };
+    job.assets[key] = { source: sourcePath, sourceMtimeMs: statSync(sourcePath).mtimeMs, clothMtimeMs: cloth?.mtimeMs, meshSettingsMtimeMs: meshSettings?.mtimeMs, dest, objects: imported.objects, build: job.buildId, decoded: decoded.decoded, spec: { kind: 'model' } };
     return imported.objects;
+  }
+
+  async function importModel(sourcePath, key, job) {
+    const prepared = await prepareModel(sourcePath, job);
+    return recordModel(prepared, await service.call('import', prepared.request), key, job);
+  }
+
+  async function importModelsTogether(specs, job, failed) {
+    const prepared = await Promise.all(specs.map((spec) => prepareModel(spec.file, job).catch((err) => (failed.set(spec.key, err), null))));
+    const ready = specs.map((spec, index) => ({ spec, prepared: prepared[index] })).filter((entry) => entry.prepared);
+    if (!ready.length) return;
+    const imported = await service.call('import-many', { items: ready.map((entry) => entry.prepared.request) });
+    for (const [index, { spec, prepared: entry }] of ready.entries()) {
+      try {
+        await recordModel(entry, imported.items[index], spec.key, job);
+      } catch (err) {
+        failed.set(spec.key, err);
+      }
+    }
   }
 
   async function importSound(spec, job) {
@@ -262,17 +300,13 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
   // (optionally retargeted onto another character), or a character's clips retargeted onto a model. The models it
   // needs are imported first in the same build when they have no build yet. `spec.key` is the identity the game
   // code's import carries.
-  async function build(spec) {
-    // What this build imports is published, with its container, only once the container is written.
-    const job = { ...newBuild(), assets: {} };
-    const { buildId } = job;
-    const timings = {};
-    const t0 = Date.now();
-
-    // A model it is built on and that has no build yet is built first, by its own build into its own container; the
-    // clips of one character asked for together wait for that one build instead of each importing the model.
+  // Imports one spec into a build's job. A model it is built on and that has no build yet is imported earlier in the
+  // same job when the same batch carries it (`batchKeys`), and otherwise built first by its own build into its own
+  // container; the clips of one character asked for together wait for that one build instead of each importing it.
+  async function importForBuild(spec, job, batchKeys = new Set()) {
     for (const model of modelsOf(spec)) {
-      if (state.assets[model]) continue;
+      if (state.assets[model] || job.assets[model]) continue;
+      if (batchKeys.has(model)) throw new Error(`${spec.key} needs ${model}, whose import failed`);
       if (!running.has(model)) schedule(model, () => build({ kind: 'model', key: model, file: resolve(devDir, model) }), (err) => err && log(`[content] ${model}: ${err.message}`));
       await running.get(model);
       if (!state.assets[model]) throw new Error(`${spec.key} needs ${model}, whose build failed`);
@@ -283,21 +317,81 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
       await importModel(spec.file, spec.key, job);
       // Clips and retargets built on the model reference its skeleton, deleted with its previous version: they are
       // built again in this build, before the cook, which would otherwise load them without their skeleton.
-      for (const dependent of dependentsOf(spec.key)) await importVariant(dependent, job);
+      for (const dependent of dependentsOf(spec.key)) if (!batchKeys.has(dependent.key)) await importVariant(dependent, job);
     } else {
       await importVariant(spec, job);
     }
-    timings.import = (Date.now() - t0) / 1000;
+  }
 
+  async function packageJob(job, timings) {
     const folders = Object.values(job.assets).map((asset) => `${asset.dest}/`);
     const packaged = await cookAndPackage({ ...job, folders });
     Object.assign(timings, packaged.timings);
-    const container = addContainer(packaged, buildId, folders);
+    const container = addContainer(packaged, job.buildId, folders);
     for (const [key, asset] of Object.entries(job.assets)) state.assets[key] = { ...asset, container };
     saveState();
+    return packaged.container;
+  }
+
+  async function build(spec) {
+    // What this build imports is published, with its container, only once the container is written.
+    const job = { ...newBuild(), assets: {} };
+    const timings = {};
+    const t0 = Date.now();
+    await importForBuild(spec, job);
+    timings.import = (Date.now() - t0) / 1000;
+    const container = await packageJob(job, timings);
     timings.total = (Date.now() - t0) / 1000;
-    log(`[content] ${spec.key} -> ${packaged.container} in ${timings.total.toFixed(1)} s ${JSON.stringify(timings)}`);
+    log(`[content] ${spec.key} -> ${container} in ${timings.total.toFixed(1)} s ${JSON.stringify(timings)}`);
     return { key: spec.key, timings, manifest: manifest() };
+  }
+
+  async function buildBatch(entries) {
+    const stale = entries.filter(({ spec }) => isStale(spec));
+    const unchanged = entries.filter((entry) => !stale.includes(entry));
+    for (const { spec, done } of unchanged) for (const onDone of done) onDone(null, { key: spec.key, timings: null, manifest: manifest() });
+    if (!stale.length) return;
+    const job = { ...newBuild(), assets: {} };
+    const timings = {};
+    const t0 = Date.now();
+    const batchKeys = new Set(stale.map(({ spec }) => spec.key));
+    const isModel = (spec) => spec.kind === 'model';
+    const models = stale.map(({ spec }) => spec).filter(isModel);
+    const failed = new Map();
+    await importModelsTogether(models, job, failed);
+    for (const spec of models) {
+      if (failed.has(spec.key)) continue;
+      try {
+        for (const dependent of dependentsOf(spec.key)) if (!batchKeys.has(dependent.key)) await importVariant(dependent, job);
+      } catch (err) {
+        failed.set(spec.key, err);
+      }
+    }
+    for (const { spec } of stale.filter((entry) => !isModel(entry.spec))) {
+      try {
+        await importForBuild(spec, job, batchKeys);
+      } catch (err) {
+        failed.set(spec.key, err);
+      }
+    }
+    timings.import = (Date.now() - t0) / 1000;
+    let packagingError = null;
+    let container = null;
+    if (Object.keys(job.assets).length) {
+      try {
+        container = await packageJob(job, timings);
+      } catch (err) {
+        packagingError = err;
+      }
+    } else {
+      writing.delete(job.tag);
+    }
+    timings.total = (Date.now() - t0) / 1000;
+    if (container) log(`[content] ${stale.length} import(s) -> ${container} in ${timings.total.toFixed(1)} s ${JSON.stringify(timings)}`);
+    for (const { spec, done } of stale) {
+      const err = failed.get(spec.key) ?? packagingError;
+      for (const onDone of done) onDone(err, err ? undefined : { key: spec.key, timings, manifest: manifest() });
+    }
   }
 
   // A clips or retargetFrom import into its own content folder; the version it replaces is deleted.
@@ -407,92 +501,119 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     return { key, timings, errors, manifest: manifest() };
   }
 
-  // The systems of one Niagara module (`*.niagara.ts`, content/niagara.mjs): `exports` as shared/niagara/describe.ts
-  // describes them. A system's path carries the hash of its description, so one built before is not built again, and
-  // the materials its renderers use are built with it when they are not built yet. Returns the build's timings, or
-  // null when nothing had to be built.
-  const niagaraInBuild = new Set();
-  async function buildNiagara(key, exports) {
-    const taking = { materials: new Set(), systems: new Set() };
-    try {
-      return await buildNiagaraTaking(key, exports, taking);
-    } finally {
-      for (const path of taking.materials) materialsInBuild.delete(path);
-      for (const path of taking.systems) niagaraInBuild.delete(path);
-    }
-  }
+  function describedAssets({ table, assetTable, noun, buildOne }) {
+    const inBuild = new Set();
 
-  async function buildNiagaraTaking(key, exports, taking) {
-    const t0 = Date.now();
-    state.niagaraAssets ??= {};
-    state.materialAssets ??= {};
-    const timings = {};
-    const inContent = (folder) => existsSync(join(contentDir, folder.slice(PLUGIN.length + 2)));
-    const materials = new Map(exports.flatMap((entry) => entry.materials).map((asset) => [asset.path, asset]));
-    const missingMaterials = [...materials.values()].filter((asset) => !state.materialAssets[asset.path] || state.materialAssets[asset.path].failed || !inContent(asset.folder));
-    const missing = exports.filter((entry) => !state.niagaraAssets[entry.path] || !inContent(entry.folder));
-    const job = missing.length || missingMaterials.length ? newBuild() : null;
-    for (const asset of materials.values()) {
-      taking.materials.add(asset.path);
-      materialsInBuild.add(asset.path);
-    }
-    for (const entry of exports) {
-      taking.systems.add(entry.path);
-      niagaraInBuild.add(entry.path);
-    }
-    for (const asset of missingMaterials) {
-      await service.call(asset.kind === 'instance' ? 'material-instance' : 'material', asset.request);
-      // Taken while the build runs; published with this build's container.
-      state.materialAssets[asset.path] = { folder: asset.folder, kind: asset.kind };
-    }
-    const built = [];
-    for (const entry of missing) {
-      const result = await buildNiagaraSystem(service, entry);
-      // Taken while the build runs; published with this build's container.
-      state.niagaraAssets[entry.path] = { folder: entry.folder };
-      built.push(result);
-    }
-    timings.create = (Date.now() - t0) / 1000;
-    if (job) writeFileSync(join(job.logs, 'niagara.json'), JSON.stringify({ key, built, descriptions: missing.map((e) => e.description) }, null, 2));
+    async function buildTaking(key, describedExports, taking) {
+      const exports = describedExports.map(versionByModels);
+      const t0 = Date.now();
+      state[assetTable] ??= {};
+      state.materialAssets ??= {};
+      const timings = {};
+      const inContent = (folder) => existsSync(join(contentDir, folder.slice(PLUGIN.length + 2)));
+      const materials = new Map(exports.flatMap((entry) => entry.materials).map((asset) => [asset.path, asset]));
+      const missingMaterials = [...materials.values()].filter((asset) => !state.materialAssets[asset.path] || state.materialAssets[asset.path].failed || !inContent(asset.folder));
+      const modelsOfEntry = (entry) => modelKeysOf(entry);
+      const modelBuildsOf = (entry) => Object.fromEntries(modelsOfEntry(entry).map((model) => [model, state.assets[model]?.build]));
+      const modelsMoved = (entry) => modelsOfEntry(entry).some((model) => state[assetTable][entry.path]?.modelBuilds?.[model] !== state.assets[model]?.build);
+      const missing = exports.filter((entry) => !state[assetTable][entry.path] || !inContent(entry.folder) || modelsMoved(entry));
+      const job = missing.length || missingMaterials.length ? newBuild() : null;
+      for (const asset of materials.values()) {
+        taking.materials.add(asset.path);
+        materialsInBuild.add(asset.path);
+      }
+      for (const entry of exports) {
+        taking.assets.add(entry.path);
+        inBuild.add(entry.path);
+      }
+      for (const asset of missingMaterials) {
+        await service.call(asset.kind === 'instance' ? 'material-instance' : 'material', asset.request);
+        state.materialAssets[asset.path] = { folder: asset.folder, kind: asset.kind };
+      }
+      const built = [];
+      for (const entry of missing) {
+        const result = await buildOne(service, entry, { objectsOf: (key) => state.assets[specOfModelKey(devDir, key).key]?.objects });
+        state[assetTable][entry.path] = { folder: entry.folder, modelBuilds: modelBuildsOf(entry) };
+        built.push(result);
+      }
+      timings.create = (Date.now() - t0) / 1000;
+      if (job) writeFileSync(join(job.logs, `${table}.json`), JSON.stringify({ key, built, descriptions: missing.map((e) => e.description) }, null, 2));
 
-    const publish = (build) => {
-      state.niagara = Object.fromEntries(Object.entries(state.niagara ?? {}).filter(([name]) => !name.startsWith(`${key}#`)));
-      for (const entry of exports) state.niagara[entry.exportKey] = { path: entry.path, user: entry.user, materials: entry.materials.map((m) => m.path), build };
+      const publish = (build) => {
+        state[table] = Object.fromEntries(Object.entries(state[table] ?? {}).filter(([name]) => !name.startsWith(`${key}#`)));
+        for (const entry of exports) {
+          const models = modelKeysOf(entry);
+          const modelBuilds = Object.fromEntries(models.map((model) => [model, state.assets[model]?.build]));
+          state[table][entry.exportKey] = { path: entry.path, user: entry.user, materials: entry.materials.map((m) => m.path), models, modelBuilds, build };
+        }
+      };
+
+      if (!job) {
+        publish(state.build);
+        saveState();
+        log(`[content] ${key}: every ${noun} is in the mounted build already`);
+        return { key, timings: null, manifest: manifest() };
+      }
+      const { buildId, tag, logs } = job;
+      const folders = [...missingMaterials.map((asset) => `${asset.folder}/`), ...missing.map((entry) => `${entry.folder}/`)];
+      const packaged = await cookAndPackage({ tag, logs, folders });
+      Object.assign(timings, packaged.timings);
+      const container = addContainer(packaged, buildId, folders);
+      for (const asset of missingMaterials) state.materialAssets[asset.path].container = container;
+      for (const entry of missing) state[assetTable][entry.path].container = container;
+      publish(buildId);
+      saveState();
+      timings.total = (Date.now() - t0) / 1000;
+      const errors = materialErrors(packaged.cookLog, [...exports.map((e) => e.path.replace(/\.[^./]+$/, '')), ...[...materials.keys()].map((p) => p.replace(/\.[^./]+$/, ''))]);
+      writeFileSync(join(logs, 'timings.json'), JSON.stringify({ key, built: missing.map((e) => e.path), timings, errors }, null, 2));
+      log(`[content] ${key} -> ${packaged.container} in ${timings.total.toFixed(1)} s ${JSON.stringify(timings)}${errors.length ? ` with ${errors.length} error line(s)` : ''}`);
+      return { key, timings, errors, manifest: manifest() };
+    }
+
+    async function build(key, exports) {
+      const taking = { materials: new Set(), assets: new Set() };
+      try {
+        return await buildTaking(key, exports, taking);
+      } finally {
+        for (const path of taking.materials) materialsInBuild.delete(path);
+        for (const path of taking.assets) inBuild.delete(path);
+      }
+    }
+
+    async function collect() {
+      const used = new Set(Object.values(state[table] ?? {}).map((n) => n.path));
+      for (const [path, asset] of Object.entries(state[assetTable] ?? {})) {
+        if (used.has(path) || inBuild.has(path)) continue;
+        await service.call('delete', { path: asset.folder });
+        delete state[assetTable][path];
+        saveState();
+      }
+    }
+
+    const latest = new Map();
+    const enqueue = (key, exports, onDone) => {
+      latest.set(key, exports);
+      schedule(`${table}:${key}`, () => build(key, latest.get(key)), (err, result) => {
+        onDone(err, result);
+        schedule(`${table}:collect`, async () => {
+          await collect();
+          await collectMaterials();
+        }, (gcErr) => gcErr && log(`[content] removing unused ${noun}s failed: ${gcErr.message}`));
+      });
     };
+    const currentState = () => ({ [table]: state[table] ?? {}, assets: state[assetTable] ?? {}, materialAssets: state.materialAssets ?? {}, models: state.assets ?? {} });
 
-    if (!job) {
-      publish(state.build);
-      saveState();
-      log(`[content] ${key}: every system is in the mounted build already`);
-      return { key, timings: null, manifest: manifest() };
-    }
-    const { buildId, tag, logs } = job;
-    const folders = [...missingMaterials.map((asset) => `${asset.folder}/`), ...missing.map((entry) => `${entry.folder}/`)];
-    const packaged = await cookAndPackage({ tag, logs, folders });
-    Object.assign(timings, packaged.timings);
-    const container = addContainer(packaged, buildId, folders);
-    for (const asset of missingMaterials) state.materialAssets[asset.path].container = container;
-    for (const entry of missing) state.niagaraAssets[entry.path].container = container;
-    publish(buildId);
-    saveState();
-    timings.total = (Date.now() - t0) / 1000;
-    // What the cook said about these systems (a script that fails to compile leaves the system unable to run).
-    const errors = materialErrors(packaged.cookLog, [...exports.map((e) => e.path.replace(/\.[^./]+$/, '')), ...[...materials.keys()].map((p) => p.replace(/\.[^./]+$/, ''))]);
-    writeFileSync(join(logs, 'timings.json'), JSON.stringify({ key, built: missing.map((e) => e.path), timings, errors }, null, 2));
-    log(`[content] ${key} -> ${packaged.container} in ${timings.total.toFixed(1)} s ${JSON.stringify(timings)}${errors.length ? ` with ${errors.length} error line(s)` : ''}`);
-    return { key, timings, errors, manifest: manifest() };
+    return { table, assetTable, collect, enqueue, currentState };
   }
 
-  // Systems no export uses any more are deleted after the build that replaced them, like materials.
-  async function collectNiagara() {
-    const used = new Set(Object.values(state.niagara ?? {}).map((n) => n.path));
-    for (const [path, asset] of Object.entries(state.niagaraAssets ?? {})) {
-      if (used.has(path) || niagaraInBuild.has(path)) continue;
-      await service.call('delete', { path: asset.folder });
-      delete state.niagaraAssets[path];
-      saveState();
-    }
-  }
+  const niagara = describedAssets({ table: 'niagara', assetTable: 'niagaraAssets', noun: 'system', buildOne: buildNiagaraSystem });
+  const terrain = describedAssets({ table: 'terrain', assetTable: 'terrainAssets', noun: 'terrain', buildOne: buildTerrainLevel });
+  const motion = describedAssets({ table: 'motion', assetTable: 'motionAssets', noun: 'motion matching graph', buildOne: buildMotionMatching });
+  const compute = describedAssets({ table: 'compute', assetTable: 'computeAssets', noun: 'compute graph', buildOne: buildComputeGraph });
+  const described = [niagara, terrain, motion, compute];
+  const collectDescribed = async () => {
+    for (const kind of described) await kind.collect();
+  };
 
   // Material assets nothing refers to any more (neither an export, the parent of an exported instance, nor a material a
   // Niagara system uses) are deleted after the build that replaced them has gone to the games, off the path of the
@@ -500,7 +621,7 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
   async function collectMaterials() {
     const used = new Set([
       ...Object.values(state.materials ?? {}).flatMap((m) => [m.path, m.parent].filter(Boolean)),
-      ...Object.values(state.niagara ?? {}).flatMap((n) => n.materials ?? []),
+      ...described.flatMap((kind) => Object.values(state[kind.table] ?? {}).flatMap((n) => n.materials ?? [])),
     ]);
     for (const [path, asset] of Object.entries(state.materialAssets ?? {})) {
       if (used.has(path) || materialsInBuild.has(path)) continue;
@@ -517,8 +638,16 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     // carry no timestamp: "Material.ush:3759:31: error: use of undeclared identifier ...").
     const lines = readFileSync(cookLog, 'utf8').split(/\r?\n/);
     const found = [];
+    const filePaths = packagePaths.map((p) => p.replace(new RegExp(`^/${PLUGIN}/`), '').replaceAll('/', '\\'));
+    const names = (line) => packagePaths.some((p) => line.includes(p)) || filePaths.some((p) => line.includes(p));
+    const kernelCompilerLines = (failedIndex) => {
+      const block = [];
+      for (let index = failedIndex - 1; index >= 0 && !/Missing cached shader map for kernel/.test(lines[index]); index--) block.unshift(lines[index]);
+      return block.filter((line) => line.trim()).map((line) => line.replace(/^\[[^\]]*\]\[[^\]]*\]/, ''));
+    };
     lines.forEach((line, index) => {
-      if (!/Error|Warning|Failed to compile/.test(line) || !packagePaths.some((p) => line.includes(p))) return;
+      if (!/Error|Warning|Failed to compile|compilation failed/.test(line) || !names(line)) return;
+      if (/Shader compilation failed/.test(line)) found.push(...kernelCompilerLines(index));
       found.push(line.replace(/^\[[^\]]*\]\[[^\]]*\]/, ''));
       for (let next = index + 1; next < lines.length && next <= index + 12 && !lines[next].startsWith('['); next++) {
         if (lines[next].trim() && !/^Shader debug info dumped/.test(lines[next])) found.push(lines[next]);
@@ -529,7 +658,7 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
 
   // The containers the published records name: every model, clip, material and system the game may load.
   function containersInUse() {
-    const names = [state.assets, state.materialAssets, state.niagaraAssets].flatMap((records) => Object.values(records ?? {}).map((record) => record.container));
+    const names = [state.assets, state.materialAssets, ...described.map((kind) => state[kind.assetTable])].flatMap((records) => Object.values(records ?? {}).map((record) => record.container));
     return [...new Set(names.filter((name) => name && state.containers[name]))];
   }
 
@@ -537,12 +666,12 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
   // per material module and Niagara module export, its asset; and the container of each asset pack.
   function manifest() {
     const packs = state.packs ?? {};
-    const containers = containersInUse().map((name) => ({ name, pak: state.containers[name].pak, shaderLibrary: state.containers[name].shaderLibrary, build: state.containers[name].build }));
+    const containers = containersInUse().map((name) => ({ name, pak: state.containers[name].pak, shaderLibrary: state.containers[name].shaderLibrary, build: state.containers[name].build, folders: state.containers[name].folders ?? [] }));
     if (!containers.length && !Object.keys(packs).length) return null;
     const assets = Object.fromEntries(Object.entries(state.assets).filter(([, a]) => a.container).map(([key, a]) => [key, { build: a.build, objects: a.objects }]));
     // The manifest's build is the newest one published: a build that failed or is still running does not change it.
     const build = containers.length ? Math.max(...containers.map((container) => container.build)) : state.build;
-    return { plugin: PLUGIN, build, containers, assets, materials: state.materials ?? {}, niagara: state.niagara ?? {}, packs };
+    return { plugin: PLUGIN, build, containers, assets, materials: state.materials ?? {}, niagara: state.niagara ?? {}, terrain: state.terrain ?? {}, motion: state.motion ?? {}, compute: state.compute ?? {}, packs };
   }
 
   // An asset pack in the project's Content/<name> (added from Fab, vge/content/fab.mjs): its packages keep their
@@ -679,8 +808,32 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     running.set(id, next);
     next.then(() => running.get(id) === next && running.delete(id));
   }
-  // A save gives the watcher more than one event; a build that finds its file as the last build left it does nothing.
-  const enqueue = (spec, onDone) => schedule(spec.key, () => (isStale(spec) ? build(spec) : { key: spec.key, timings: null, manifest: manifest() }), onDone);
+  // A save gives the watcher more than one event; a batch that finds a file as the last build left it does nothing
+  // for it. A file saved again while its batch builds goes into the next batch, built from what it is then.
+  const pendingImports = new Map();
+  let importBatch = null;
+  function startImportBatch() {
+    if (importBatch || !pendingImports.size) return;
+    const entries = [...pendingImports.values()];
+    pendingImports.clear();
+    const batch = buildBatch(entries)
+      .catch((err) => log(`[content] import batch failed: ${err.message}`))
+      .finally(() => {
+        for (const { spec } of entries) if (running.get(spec.key) === batch) running.delete(spec.key);
+        importBatch = null;
+        collectSoon();
+        startImportBatch();
+      });
+    importBatch = batch;
+    for (const { spec } of entries) running.set(spec.key, batch);
+  }
+  function enqueue(spec, onDone) {
+    const entry = pendingImports.get(spec.key) ?? { spec, done: [] };
+    entry.spec = spec;
+    entry.done.push(onDone);
+    pendingImports.set(spec.key, entry);
+    startImportBatch();
+  }
   const enqueuePack = (name, onDone) => schedule(`pack:${name}`, () => buildPack(name), onDone);
   // Builds of content no source file imports any more (content/imports.mjs importedContent) are removed: their
   // records and their content folders, and with them their containers at the next collection. Nothing is removed while
@@ -690,23 +843,25 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     let removed = 0;
     const removedAssets = [];
     const removedModules = new Set();
+    const usedByAssets = new Set(described.flatMap((kind) => Object.values(state[kind.table] ?? {}).flatMap((entry) => entry.models ?? [])));
     for (const [key, asset] of Object.entries(state.assets)) {
-      if (models.has(key) || running.has(key)) continue;
+      if (models.has(key) || usedByAssets.has(key) || running.has(key)) continue;
       await service.call('delete', { path: asset.dest });
       delete state.assets[key];
       removedAssets.push(key);
       removed++;
     }
     const moduleOf = (exportKey) => exportKey.slice(0, exportKey.indexOf('#'));
-    for (const table of [state.materials, state.niagara]) {
-      for (const exportKey of Object.keys(table ?? {})) {
-        if (modules.has(moduleOf(exportKey)) || running.has(`materials:${moduleOf(exportKey)}`) || running.has(`niagara:${moduleOf(exportKey)}`)) continue;
-        delete table[exportKey];
+    const tables = ['materials', ...described.map((kind) => kind.table)];
+    for (const name of tables) {
+      for (const exportKey of Object.keys(state[name] ?? {})) {
+        if (modules.has(moduleOf(exportKey)) || tables.some((t) => running.has(`${t}:${moduleOf(exportKey)}`))) continue;
+        delete state[name][exportKey];
         removedModules.add(moduleOf(exportKey));
         removed++;
       }
     }
-    await collectNiagara();
+    await collectDescribed();
     await collectMaterials();
     saveState();
     if (removed) log(`[content] removed ${removed} build(s) of content no code imports any more`);
@@ -725,7 +880,7 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
         const { buildId, tag, logs } = newBuild();
         const packaged = await cookAndPackage({ tag, logs, folders: lost.folders });
         const container = addContainer(packaged, buildId, lost.folders);
-        for (const records of [state.assets, state.materialAssets, state.niagaraAssets]) {
+        for (const records of [state.assets, state.materialAssets, ...described.map((kind) => state[kind.assetTable])]) {
           for (const record of Object.values(records ?? {})) if (record.container === name) record.container = container;
         }
         saveState();
@@ -745,24 +900,12 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     });
   };
 
-  // A Niagara module saved again while its build waits is built once, from its newest description.
-  const latestNiagara = new Map();
-  const enqueueNiagara = (key, exports, onDone) => {
-    latestNiagara.set(key, exports);
-    schedule(`niagara:${key}`, () => buildNiagara(key, latestNiagara.get(key)), (err, result) => {
-      onDone(err, result);
-      schedule('niagara:collect', async () => {
-        await collectNiagara();
-        await collectMaterials();
-      }, (gcErr) => gcErr && log(`[content] removing unused systems failed: ${gcErr.message}`));
-    });
-  };
-
   // True when the import has no build yet, its file changed since, or a model it is built on was built again.
   const isStale = (spec) => {
     const asset = state.assets[spec.key];
     if (asset?.sourceMtimeMs !== statSync(spec.file).mtimeMs) return true;
     if ((spec.kind ?? 'model') === 'model' && asset.clothMtimeMs !== clothOf(spec.file)?.mtimeMs) return true;
+    if ((spec.kind ?? 'model') === 'model' && asset.meshSettingsMtimeMs !== meshSettingsOf(spec.file)?.mtimeMs) return true;
     return Object.entries(asset.models ?? {}).some(([model, build]) => state.assets[model]?.build !== build);
   };
   // Every import of a file, for a save of it: the file itself and its variants (clips, retargets).
@@ -775,11 +918,18 @@ export function createContentPipeline({ projectDir, release = 'dev', log = conso
     enqueue,
     enqueuePack,
     enqueueMaterials,
-    enqueueNiagara,
+    enqueueNiagara: niagara.enqueue,
+    enqueueTerrain: terrain.enqueue,
+    enqueueMotion: motion.enqueue,
+    enqueueCompute: compute.enqueue,
     // The material assets each export of a material module has now (content/materials.mjs: is a build needed).
     materialState: () => ({ materials: state.materials ?? {}, assets: state.materialAssets ?? {} }),
-    // The same for the systems of Niagara modules.
-    niagaraState: () => ({ niagara: state.niagara ?? {}, assets: state.niagaraAssets ?? {}, materialAssets: state.materialAssets ?? {} }),
+    // The same for the systems of Niagara modules and the levels of terrain modules.
+    niagaraState: niagara.currentState,
+    terrainState: terrain.currentState,
+    motionState: motion.currentState,
+    versionByModels,
+    computeState: compute.currentState,
     isStale,
     specsOf,
     manifest,

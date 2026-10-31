@@ -116,6 +116,11 @@ export interface TwoBoneIKElement extends WithPoses {
   allowTwist?: boolean;
 }
 
+export interface ControlElement extends WithPoses {
+  node: string;
+  [field: string]: unknown;
+}
+
 type Vector = readonly [number, number, number];
 type Axis = 'AxisX' | 'AxisY' | 'AxisZ';
 
@@ -215,6 +220,7 @@ export interface AnimIntrinsicElements {
   slot: SlotElement;
   twoBoneIK: TwoBoneIKElement;
   animDynamics: AnimDynamicsElement;
+  control: ControlElement;
 }
 
 const NODE_TYPES: Record<string, string> = {
@@ -234,6 +240,7 @@ const NODE_TYPES: Record<string, string> = {
   slot: 'slot',
   twoBoneIK: 'twoBoneIK',
   animDynamics: 'animDynamics',
+  control: 'control',
 };
 export const isAnimElement = (type: string) => type === 'animGraph' || type in NODE_TYPES;
 

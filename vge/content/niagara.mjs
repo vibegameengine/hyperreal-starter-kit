@@ -98,7 +98,8 @@ export async function buildNiagaraSystem(service, entry) {
   if (!systemTemplate) {
     for (const emitterName of templateEmitters) await call('RemoveEmitter', { emitterToRemove: at({ emitterName }) });
   }
-  if (Object.keys(user).length) {
+  const addUserVariables = async () => {
+    if (!Object.keys(user).length) return;
     await call('AddUserVariables', {
       system,
       variablesToAdd: Object.entries(user).map(([name, value]) => {
@@ -106,7 +107,11 @@ export async function buildNiagaraSystem(service, entry) {
         return { name: `User.${name}`, type: { classStructOrEnum: ref(type) }, defaultValue: typedValue(type, value, `user.${name}`) };
       }),
     });
-  }
+  };
+  const linksUser = (value) => Boolean(value && typeof value === 'object' && !Array.isArray(value) && (String(value.link ?? '').startsWith('User.') || Object.values(value.inputs ?? {}).some(linksUser)));
+  const userFirst = Object.values(emitters).some((emitter) => [...Object.values(emitter.inputs ?? {}), ...(emitter.modules ?? []).flatMap((module) => Object.values(module.inputs ?? {}))].some(linksUser));
+  if (userFirst) await addUserVariables();
+  const constants = [];
 
   for (const [emitterName, emitter] of Object.entries(emitters)) {
     const where = (rest) => `${emitterName}.${rest}`;
@@ -200,15 +205,39 @@ export async function buildNiagaraSystem(service, entry) {
         if (Object.keys(values).length) await call('SetRendererData', { renderer: emitterAt({ rendererIndex: added.rendererIndex }), rendererData: { propertyValues: JSON.stringify(values) } });
       }
     }
-    if (emitter.constants) {
-      const written = await service.call('niagara-constants', { path: entry.path, emitter: name, values: emitter.constants });
-      if (written.error) throw new Error(where(`constants: ${written.error}`));
-    }
+    if (emitter.constants) constants.push({ name, values: emitter.constants, where });
+  }
+
+  if (!userFirst) await addUserVariables();
+  for (const { name, values, where } of constants) {
+    const written = await service.call('niagara-constants', { path: entry.path, emitter: name, values });
+    if (written.error) throw new Error(where(`constants: ${written.error}`));
   }
 
   // The scripts are compiled by the cook (Niagara compiles a system for its target platform while cooking it); its
   // errors come back from the cook log (content/pipeline.mjs buildNiagara). Tools that wait for an editor compile
   // (GetStackIssues, GetSystemCompileState) are not used: nothing ticks the asynchronous compile in the commandlet.
   const saved = await service.call('niagara-save', { path: entry.path });
-  return { path: entry.path, saved };
+  return { path: entry.path, saved, emitters: await emittersAsBuilt(call, at, system) };
+}
+
+async function emittersAsBuilt(call, at, system) {
+  const tryCall = async (tool, input) => {
+    try {
+      return await call(tool, input);
+    } catch (err) {
+      return { error: String(err?.message ?? err) };
+    }
+  };
+  const emitters = {};
+  for (const { emitterName } of (await call('GetSystemSummary', { system })).emitters) {
+    const renderers = [];
+    for (let rendererIndex = 0; rendererIndex < 8; rendererIndex++) {
+      const renderer = await tryCall('GetRendererData', { rendererRef: at({ emitterName, rendererIndex }) });
+      if (renderer?.error) break;
+      renderers.push(renderer);
+    }
+    emitters[emitterName] = { data: await tryCall('GetEmitterData', { emitterRef: at({ emitterName }) }), renderers };
+  }
+  return emitters;
 }

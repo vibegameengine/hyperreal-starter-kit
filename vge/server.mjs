@@ -3,6 +3,7 @@
 // environments: `unreal` (game code; every Unreal process is a ModuleRunner client over WebSocket at
 // /__unreal) and the regular browser `client` (the HTML/CSS UI at /src/ui/, shown in the game by the
 // engine's embedded browser with Vite's own HMR client). Both share one HTTP port.
+import { readFileSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { makeIdFiltersToMatchWithQuery } from '@rolldown/pluginutils';
@@ -12,12 +13,15 @@ import { WebSocketServer } from 'ws';
 import { createFab } from './content/fab.mjs';
 import { createContentPipeline } from './content/pipeline.mjs';
 import { importedContent } from './content/imports.mjs';
-import { contentSpec } from './content/characters.mjs';
+import { contentSpec, specOfModelKey } from './content/characters.mjs';
 import { ports, runtimeDir, shellSecret } from './tools/engine.mjs';
 import { isAlive, registerRuntimeUse, trackProcess } from './tools/processes.mjs';
 import { startShell } from './tools/shell.mjs';
 import { createMaterialModules, handleModule } from './content/materials.mjs';
 import { createNiagaraModules, NIAGARA_MODULE, niagaraHandleModule } from './content/niagara.mjs';
+import { createTerrainModules, TERRAIN_MODULE, terrainHandleModule } from './content/terrain.mjs';
+import { createMotionModules, MOTION_MODULE, motionHandleModule } from './content/motion.mjs';
+import { COMPUTE_MODULE, computeHandleModule, createComputeModules } from './content/compute.mjs';
 import { contentAssetsPlugin } from './vite/contentAssetsPlugin.mjs';
 import { devLeanTransportPlugin } from './vite/devLeanTransportPlugin.ts';
 import { materialsEnvironment, uiKitClientPlugins, unrealOptimizeDeps, unrealResolve } from './vite/environments.mjs';
@@ -95,6 +99,14 @@ const unrealChannel = createUnrealHotChannel();
 // Model files the game code imports become cooked containers; runtimes are told over the unreal hot channel.
 const pipeline = createContentPipeline({ projectDir: resolve(process.cwd(), 'unreal') });
 
+function isHalfWritten(file) {
+  try {
+    return !readFileSync(file, 'utf8').trim();
+  } catch {
+    return false;
+  }
+}
+
 function contentPlugins() {
   let unreal;
   let server;
@@ -126,39 +138,77 @@ function contentPlugins() {
     if (needsBuild(exports)) buildMaterials(key, exports);
     return code;
   };
-  // Niagara modules: described like material modules (their renderers use materials), built by the pipeline with the
-  // engine's Niagara tool calls, imported by the game as handles.
-  const niagara = createNiagaraModules({ materials, folderRoot: '/VgeLive/Niagara' });
-  const buildNiagara = (key, exports) => {
-    console.log(`[content] building systems of ${key}`);
-    pipeline.enqueueNiagara(key, exports, (err, result) => {
-      if (err) {
-        console.error(`[content] ${err.message}`);
-        unreal().send('vge:content-error', { file: key, message: err.message });
+  // Niagara and terrain modules: described like material modules (they use materials), built by the pipeline through
+  // the content service, imported by the game as handles.
+  const describedModules = ({ modules, handleModuleOf, enqueue, currentState, table, noun, modelsOf = () => [] }) => {
+    const build = (key, exports) => {
+      const models = [...new Set(exports.flatMap(modelsOf))].map((model) => specOfModelKey(process.cwd(), model)).filter((spec) => pipeline.isStale(spec));
+      if (models.length) {
+        let waiting = models.length;
+        let failed = false;
+        for (const spec of models) {
+          console.log(`[content] building ${spec.key} for ${key}`);
+          pipeline.enqueue(spec, (err, result) => {
+            if (err) {
+              failed = true;
+              console.error(`[content] ${err.message}`);
+              unreal().send('vge:content-error', { file: key, message: `${spec.key}, which ${key} uses, did not build: ${err.message}` });
+            } else unreal().send('vge:content', result.manifest);
+            if (--waiting === 0 && !failed) build(key, exports);
+          });
+        }
         return;
       }
-      for (const line of result.errors ?? []) console.error(`[content] ${key}: ${line}`);
-      if (result.errors?.length) unreal().send('vge:content-error', { file: key, message: `the cook reported errors:\n${result.errors.join('\n')}` });
-      unreal().send('vge:content', result.manifest);
-    });
+      console.log(`[content] building ${noun} of ${key}`);
+      enqueue(key, exports, (err, result) => {
+        if (err) {
+          console.error(`[content] ${err.message}`);
+          unreal().send('vge:content-error', { file: key, message: err.message });
+          return;
+        }
+        for (const line of result.errors ?? []) console.error(`[content] ${key}: ${line}`);
+        if (result.errors?.length) unreal().send('vge:content-error', { file: key, message: `the cook reported errors:\n${result.errors.join('\n')}` });
+        unreal().send('vge:content', result.manifest);
+      });
+    };
+    const needsBuild = (exports) => {
+      const { [table]: built, assets, materialAssets, models } = currentState();
+      const staleModel = (e) =>
+        modelsOf(e).some((model) => {
+          const spec = specOfModelKey(process.cwd(), model);
+          return pipeline.isStale(spec) || built[e.exportKey]?.modelBuilds?.[spec.key] !== models[spec.key]?.build;
+        });
+      return exports.some((e) => {
+        const path = pipeline.versionByModels(e).path;
+        return built[e.exportKey]?.path !== path || !assets[path] || e.materials.some((m) => !materialAssets[m.path]) || staleModel(e);
+      });
+    };
+    return async (file, key) => {
+      const exports = await modules.describe(file);
+      const code = handleModuleOf(exports);
+      handles.set(key, code);
+      if (needsBuild(exports)) build(key, exports);
+      return code;
+    };
   };
-  const niagaraNeedsBuild = (exports) => {
-    const { niagara: built, assets, materialAssets } = pipeline.niagaraState();
-    return exports.some((e) => built[e.exportKey]?.path !== e.path || !assets[e.path] || e.materials.some((m) => !materialAssets[m.path]));
-  };
-  const describeNiagara = async (file, key) => {
-    const exports = await niagara.describe(file);
-    const code = niagaraHandleModule(exports);
-    handles.set(key, code);
-    if (niagaraNeedsBuild(exports)) buildNiagara(key, exports);
-    return code;
-  };
+  const niagara = createNiagaraModules({ materials, folderRoot: '/VgeLive/Niagara' });
+  const describeNiagara = describedModules({ modules: niagara, handleModuleOf: niagaraHandleModule, enqueue: pipeline.enqueueNiagara, currentState: pipeline.niagaraState, table: 'niagara', noun: 'systems' });
+  const terrain = createTerrainModules({ materials, folderRoot: '/VgeLive/Terrain' });
+  const describeTerrain = describedModules({ modules: terrain, handleModuleOf: terrainHandleModule, enqueue: pipeline.enqueueTerrain, currentState: pipeline.terrainState, table: 'terrain', noun: 'terrains', modelsOf: (entry) => (entry.request.grass ?? []).map((grass) => grass.model) });
+  const motion = createMotionModules({ materials, folderRoot: '/VgeLive/Motion' });
+  const describeMotion = describedModules({ modules: motion, handleModuleOf: motionHandleModule, enqueue: pipeline.enqueueMotion, currentState: pipeline.motionState, table: 'motion', noun: 'motion matching graphs', modelsOf: (entry) => entry.request.models ?? [] });
+  const compute = createComputeModules({ materials, folderRoot: '/VgeLive/Compute' });
+  const describeCompute = describedModules({ modules: compute, handleModuleOf: computeHandleModule, enqueue: pipeline.enqueueCompute, currentState: pipeline.computeState, table: 'compute', noun: 'compute graphs' });
   // An edit of a material or Niagara module, or of anything it imports: its assets are described again, built when
   // they changed, and the game reloads its handle module only when the exports themselves changed.
   const onFileChange = async (file) => {
+    if (isHalfWritten(file)) return;
     const affected = [
       ...materials.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describeMaterials })),
       ...niagara.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describeNiagara })),
+      ...terrain.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describeTerrain })),
+      ...motion.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describeMotion })),
+      ...compute.affectedBy(file).map((moduleFile) => ({ moduleFile, describe: describeCompute })),
     ];
     if (!affected.length) return;
     materials.invalidate(file);
@@ -244,6 +294,9 @@ function contentPlugins() {
     }),
     materialAssetsPlugin({ root: process.cwd(), onImport: describeMaterials }),
     materialAssetsPlugin({ root: process.cwd(), onImport: describeNiagara, pattern: NIAGARA_MODULE, name: 'vge:niagara-assets' }),
+    materialAssetsPlugin({ root: process.cwd(), onImport: describeTerrain, pattern: TERRAIN_MODULE, name: 'vge:terrain-assets' }),
+    materialAssetsPlugin({ root: process.cwd(), onImport: describeMotion, pattern: MOTION_MODULE, name: 'vge:motion-assets' }),
+    materialAssetsPlugin({ root: process.cwd(), onImport: describeCompute, pattern: COMPUTE_MODULE, name: 'vge:compute-assets' }),
   ];
 }
 

@@ -1,6 +1,9 @@
 import * as UE from 'ue';
 import type { MaterialParamType, MaterialRef } from '../material/types';
 import type { NiagaraSystemRef } from '../niagara';
+import type { MotionMatchingRef } from '../motion';
+import type { ComputeRef } from '../compute';
+import type { TerrainRef } from '../terrain';
 import { gameInstance, own } from './world';
 
 export interface ContentObject {
@@ -45,6 +48,7 @@ interface ContentContainer {
   pak: string;
   shaderLibrary: string;
   build: number;
+  folders?: string[];
 }
 interface Manifest {
   plugin: string;
@@ -53,8 +57,16 @@ interface Manifest {
   assets: Record<string, { build: number; objects: ContentObject[] }>;
   materials?: Record<string, ContentMaterial>;
   niagara?: Record<string, ContentNiagara>;
+  terrain?: Record<string, ContentTerrain>;
+  motion?: Record<string, ContentTerrain>;
+  compute?: Record<string, ContentTerrain>;
   packs: Record<string, ContentPack>;
 }
+export interface ContentTerrain {
+  path: string;
+  build: number;
+}
+type TerrainListener = (terrain: ContentTerrain) => void;
 type AssetListener = (asset: ContentAsset) => void;
 type PackListener = (pack: ContentPack) => void;
 type MaterialListener = (material: ContentMaterial) => void;
@@ -62,11 +74,15 @@ type NiagaraListener = (system: ContentNiagara) => void;
 
 interface LiveContent {
   mounted: Set<string>;
+  packages?: Map<string, string[]>;
   manifest: Manifest | null;
   listeners: Map<string, Set<AssetListener>>;
   packListeners?: Map<string, Set<PackListener>>;
   materialListeners?: Map<string, Set<MaterialListener>>;
   niagaraListeners?: Map<string, Set<NiagaraListener>>;
+  terrainListeners?: Map<string, Set<TerrainListener>>;
+  motionListeners?: Map<string, Set<TerrainListener>>;
+  computeListeners?: Map<string, Set<TerrainListener>>;
 }
 declare const __vge: { content?: LiveContent };
 
@@ -74,6 +90,10 @@ const live: LiveContent = (__vge.content ??= { mounted: new Set(), manifest: nul
 const packListeners = (live.packListeners ??= new Map());
 const materialListeners = (live.materialListeners ??= new Map());
 const niagaraListeners = (live.niagaraListeners ??= new Map());
+const terrainListeners = (live.terrainListeners ??= new Map());
+const motionListeners = (live.motionListeners ??= new Map());
+const computeListeners = (live.computeListeners ??= new Map());
+const packagesOf = (live.packages ??= new Map<string, string[]>());
 
 export function contentAsset(key: string, objects?: ContentObject[]): ContentAssetRef {
   return { key, objects };
@@ -108,20 +128,70 @@ function notify(key: string, asset: ContentAsset, listeners: Iterable<AssetListe
 }
 
 const UNMOUNT_AFTER_MS = 5000;
+const UNMOUNT_RETRY_MS = 5000;
 const unmounting = new Set<string>();
+
+function currentPaks(manifest: Manifest | null) {
+  return new Set([...(manifest?.containers ?? []).map((container) => container.pak), ...Object.values(manifest?.packs ?? {}).map((pack) => pack.pak)]);
+}
+
+const packageOf = (objectPath: string) => objectPath.split('.')[0];
+
+function manifestPackages(manifest: Manifest) {
+  const paths = [
+    ...Object.values(manifest.assets).flatMap((asset) => asset.objects.map((object) => object.path)),
+    ...[manifest.materials, manifest.niagara, manifest.terrain, manifest.motion, manifest.compute].flatMap((table) => Object.values(table ?? {}).map((record) => record.path)),
+  ];
+  return [...new Set(paths.map(packageOf))];
+}
+
+function rememberPackages(manifest: Manifest) {
+  const names = manifestPackages(manifest);
+  for (const container of manifest.containers ?? []) {
+    const roots = container.folders ?? [];
+    if (!roots.length) continue;
+    const known = new Set(packagesOf.get(container.pak) ?? []);
+    for (const name of names) if (roots.some((root) => name.startsWith(root))) known.add(name);
+    packagesOf.set(container.pak, [...known]);
+  }
+}
+
+function loadedPackagesOf(pak: string) {
+  return (packagesOf.get(pak) ?? []).filter((name) => UE.Package.Find(name)).length;
+}
+
+function unmountWhenUnused(pak: string, waited: boolean) {
+  if (currentPaks(live.manifest).has(pak)) {
+    unmounting.delete(pak);
+    return;
+  }
+  const loaded = loadedPackagesOf(pak);
+  if (loaded > 0) {
+    if (!waited) console.log(`[content] keeping ${pak} mounted: ${loaded} of its packages are still loaded`);
+    UE.KismetSystemLibrary.CollectGarbage();
+    setTimeout(() => unmountWhenUnused(pak, true), UNMOUNT_RETRY_MS);
+    return;
+  }
+  unmounting.delete(pak);
+  gameInstance.UnmountContent(pak);
+  live.mounted.delete(pak);
+  packagesOf.delete(pak);
+}
+
 function unmountSuperseded(manifest: Manifest) {
-  const current = new Set([...(manifest.containers ?? []).map((container) => container.pak), ...Object.values(manifest.packs ?? {}).map((pack) => pack.pak)]);
+  const current = currentPaks(manifest);
   const superseded = [...live.mounted].filter((pak) => !current.has(pak) && !unmounting.has(pak));
-  if (!superseded.length) return;
-  for (const pak of superseded) unmounting.add(pak);
-  setTimeout(() => {
-    for (const pak of superseded) {
-      unmounting.delete(pak);
-      if (live.manifest && [...(live.manifest.containers ?? []).map((container) => container.pak)].includes(pak)) continue;
-      gameInstance.UnmountContent(pak);
-      live.mounted.delete(pak);
-    }
-  }, UNMOUNT_AFTER_MS);
+  for (const pak of superseded) {
+    unmounting.add(pak);
+    setTimeout(() => unmountWhenUnused(pak, false), UNMOUNT_AFTER_MS);
+  }
+}
+
+function notifyBuilt(table: Map<string, Set<TerrainListener>>, now: Record<string, ContentTerrain> | undefined, before: Record<string, ContentTerrain> | undefined) {
+  for (const [key, listeners] of table) {
+    const built = now?.[key];
+    if (built && (before?.[key]?.path !== built.path || before?.[key]?.build !== built.build)) notifyTerrain(key, built, listeners);
+  }
 }
 
 function apply(manifest: Manifest | null) {
@@ -135,6 +205,7 @@ function apply(manifest: Manifest | null) {
       }
       live.mounted.add(container.pak);
     }
+    rememberPackages(manifest);
     const previous = live.manifest;
     for (const pack of Object.values(manifest.packs ?? {})) {
       if (live.mounted.has(pack.pak)) continue;
@@ -161,6 +232,9 @@ function apply(manifest: Manifest | null) {
       const system = manifest.niagara?.[key];
       if (system && previous?.niagara?.[key]?.path !== system.path) notifyNiagara(key, system, listeners);
     }
+    notifyBuilt(terrainListeners, manifest.terrain, previous?.terrain);
+    notifyBuilt(motionListeners, manifest.motion, previous?.motion);
+    notifyBuilt(computeListeners, manifest.compute, previous?.compute);
     console.log(`[content] build ${manifest.build} mounted, assets: ${Object.keys(manifest.assets).join(', ')}; packs: ${Object.keys(manifest.packs ?? {}).join(', ')}`);
     unmountSuperseded(manifest);
   } catch (err: any) {
@@ -237,6 +311,64 @@ function notifyNiagara(key: string, system: ContentNiagara, listeners: Iterable<
       console.error(`[content] system ${key} listener failed: ${err?.stack ?? err}`);
     }
   }
+}
+
+function notifyTerrain(key: string, terrain: ContentTerrain, listeners: Iterable<TerrainListener>) {
+  for (const listener of listeners) {
+    try {
+      listener(terrain);
+    } catch (err: any) {
+      console.error(`[content] terrain ${key} listener failed: ${err?.stack ?? err}`);
+    }
+  }
+}
+
+export function terrainAsset(ref: TerrainRef): TerrainRef {
+  return ref;
+}
+
+export function onTerrain(ref: TerrainRef, listener: TerrainListener) {
+  const now = ref.path ? { path: ref.path, build: 0 } : live.manifest?.terrain?.[ref.key];
+  if (ref.path) {
+    if (now) notifyTerrain(ref.key, now, [listener]);
+    return own(() => {});
+  }
+  if (!terrainListeners.has(ref.key)) terrainListeners.set(ref.key, new Set());
+  terrainListeners.get(ref.key)!.add(listener);
+  if (now) notifyTerrain(ref.key, now, [listener]);
+  return own(() => terrainListeners.get(ref.key)?.delete(listener));
+}
+
+export function motionMatchingAsset(ref: MotionMatchingRef): MotionMatchingRef {
+  return ref;
+}
+
+export function onMotionMatching(ref: MotionMatchingRef, listener: TerrainListener) {
+  const now = ref.path ? { path: ref.path, build: 0 } : live.manifest?.motion?.[ref.key];
+  if (ref.path) {
+    if (now) notifyTerrain(ref.key, now, [listener]);
+    return own(() => {});
+  }
+  if (!motionListeners.has(ref.key)) motionListeners.set(ref.key, new Set());
+  motionListeners.get(ref.key)!.add(listener);
+  if (now) notifyTerrain(ref.key, now, [listener]);
+  return own(() => motionListeners.get(ref.key)?.delete(listener));
+}
+
+export function computeAsset(ref: ComputeRef): ComputeRef {
+  return ref;
+}
+
+export function onCompute(ref: ComputeRef, listener: TerrainListener) {
+  const now = ref.path ? { path: ref.path, build: 0 } : live.manifest?.compute?.[ref.key];
+  if (ref.path) {
+    if (now) notifyTerrain(ref.key, now, [listener]);
+    return own(() => {});
+  }
+  if (!computeListeners.has(ref.key)) computeListeners.set(ref.key, new Set());
+  computeListeners.get(ref.key)!.add(listener);
+  if (now) notifyTerrain(ref.key, now, [listener]);
+  return own(() => computeListeners.get(ref.key)?.delete(listener));
 }
 
 export function niagaraAsset(ref: NiagaraSystemRef): NiagaraSystemRef {

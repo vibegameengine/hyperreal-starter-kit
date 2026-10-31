@@ -2,10 +2,15 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "ArrayBuffer.h"
 #include "VgeScriptLibrary.generated.h"
 
 class UActorComponent;
+class UAnimInstance;
+class UInstancedStaticMeshComponent;
+class ULevelStreamingDynamic;
 class USkeletalMeshComponent;
+class UTexture2D;
 
 // Engine calls the scene renderer needs and Unreal does not expose as UFunctions.
 UCLASS()
@@ -28,4 +33,16 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Vge")
 	static TArray<FVector> RenderedVertices(USkeletalMeshComponent* Component, int32 Section);
+
+	UFUNCTION(BlueprintCallable, Category = "Vge", meta = (WorldContext = "WorldContext"))
+	static ULevelStreamingDynamic* LoadLevelInstance(UObject* WorldContext, const FString& PackageName, FVector Location);
+
+	UFUNCTION(BlueprintCallable, Category = "Vge")
+	static FString DescribeMotionMatching(UAnimInstance* Instance);
+
+	UFUNCTION(BlueprintCallable, Category = "Vge")
+	static void SetInstances(UInstancedStaticMeshComponent* Component, const TArray<FTransform>& Transforms, const TArray<float>& CustomData);
+
+	UFUNCTION(BlueprintCallable, Category = "Vge")
+	static UTexture2D* CreateFloatTexture(int32 Width, int32 Height, FArrayBuffer Pixels);
 };

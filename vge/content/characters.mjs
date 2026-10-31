@@ -21,6 +21,11 @@ export const CHARACTERS = {
 // What an import asks for: { key, file, kind: 'model' | 'clips' | 'retargetFrom', model?, retarget?, from? }.
 // `key` is the identity the game code's import carries: the file's path relative to the dev folder, plus the query
 // with any file in it relative to the dev folder too.
+export function specOfModelKey(root, modelKey) {
+  const [path, query] = modelKey.split('?');
+  return contentSpec(root, resolve(root, path), query);
+}
+
 export function contentSpec(root, file, query) {
   const keyOf = (path) => relative(root, path).replaceAll('\\', '/');
   const params = new URLSearchParams(query ?? '');
