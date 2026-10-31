@@ -142,6 +142,13 @@ export const LABS: readonly DevLab[] = [
     load: () => import('../features/demo/labs/nanite'),
   }),
   defineLab({
+    id: 'outfit',
+    title: 'Outfit',
+    description: 'Clothes on Manny without cloth simulation: each garment skinned to his skeleton is its own JSX element with live sliders for layer order, size and position; the body yields under a garment, and of two garments the upper moves out while the lower bends in. Sneakers, sunglasses and a watch ride his bones rigidly.',
+    category: 'character',
+    load: () => import('../features/character/labs/outfit'),
+  }),
+  defineLab({
     id: 'particles',
     title: 'Particles',
     description: 'Niagara systems written in TypeScript (features/fx/assets/effects.ts): GPU sparks with user parameters, a burst, a ribbon and mesh particles; save the module and they rebuild live.',

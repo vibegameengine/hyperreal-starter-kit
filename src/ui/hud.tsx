@@ -26,6 +26,7 @@ import { SoftTissueLabHud } from './hud/SoftTissueLabHud';
 import { SoundLabHud } from './hud/SoundLabHud';
 import { SpinningCubesLabHud } from './hud/SpinningCubesLabHud';
 import { TripoGirlLabHud } from './hud/TripoGirlLabHud';
+import { OutfitLabHud } from './hud/OutfitLabHud';
 import { VolumetricsLabHud } from './hud/VolumetricsLabHud';
 import { PcgLabHud } from './hud/PcgLabHud';
 import { DestructionLabHud } from './hud/DestructionLabHud';
@@ -59,6 +60,7 @@ createRoot(document.getElementById('root')!).render(
     <MotionMatchingLabHud />
     <CustomPlayerLabHud />
     <TripoGirlLabHud />
+    <OutfitLabHud />
     <SoftTissueLabHud />
     <GirlPlayerLabHud />
     <VolumetricsLabHud />

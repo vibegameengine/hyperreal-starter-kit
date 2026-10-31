@@ -18,6 +18,7 @@ import mixamoCharacter from '../ui/labs/previews/mixamo-character.webp?url'
 import mixamoToManny from '../ui/labs/previews/mixamo-to-manny.webp?url'
 import motionMatching from '../ui/labs/previews/motion-matching.webp?url'
 import nanite from '../ui/labs/previews/nanite.webp?url'
+import outfit from '../ui/labs/previews/outfit.webp?url'
 import particles from '../ui/labs/previews/particles.webp?url'
 import pcg from '../ui/labs/previews/pcg.webp?url'
 import physics from '../ui/labs/previews/physics.webp?url'
@@ -54,6 +55,7 @@ export const LAB_PREVIEWS: Readonly<Record<string, string>> = {
   'mixamo-to-manny': mixamoToManny,
   'motion-matching': motionMatching,
   nanite,
+  outfit,
   particles,
   pcg,
   physics,

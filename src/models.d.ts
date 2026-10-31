@@ -50,6 +50,10 @@ declare module '*/cape.glb?cloth=Cloth&pinAbove=z:-2&ramp=8&reach=160&density=0.
   const asset: import('./shared/engine/content').ContentAssetRef;
   export default asset;
 }
+declare module '*.glb?retargetFrom=manny' {
+  const asset: import('./shared/engine/content').ContentAssetRef;
+  export default asset;
+}
 declare module '*/curtain.glb?cloth=Cloth&pinAbove=z:253&ramp=10&reach=260&density=0.45' {
   const asset: import('./shared/engine/content').ContentAssetRef;
   export default asset;
