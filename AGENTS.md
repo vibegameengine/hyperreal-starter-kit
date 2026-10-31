@@ -412,6 +412,24 @@ and the animation units were then fixed in the asset step without C++.
      stiffness, damping, drag and collision are set by code
      (`useClothBehaviour` in `src/shared/react/cloth.ts`).
 
+10. **"REBUILDING" IS A SIGN YOU ARE OFF THE TASK.** When you catch yourself
+    saying "rebuilding", "waiting for the rebuild" or "it is recompiling", stop:
+    in most cases you are doing something other than the task you were given.
+    - The only legitimate rebuild is the C++ runtime (`npm run build:cpp`),
+      and only when the task brings a new engine feature to TypeScript that is
+      not exposed yet.
+    - Content, materials, labs and game code never need a "rebuild": the dev
+      server builds what the code imports, live, in seconds. If it does not,
+      that is a defect to read in the dev-server console, not a reason to wait
+      for a rebuild.
+    - Before any rebuild, say in one line which new engine capability it
+      exposes to TypeScript. If you cannot name one, do not rebuild; go back to
+      the task.
+
+    What it cost: on 2026-10-31 the owner kept catching agents reporting
+    "rebuilding" and found each time that instead of the asked task they had
+    been doing something else.
+
 ## Roles
 
 All agent roles and workflow rules live in [agents/AGENTS.md](./agents/AGENTS.md).
