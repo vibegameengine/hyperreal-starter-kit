@@ -778,31 +778,67 @@ In a dev game (`npm run dev`, then the shell):
 The editor's selection outline is editor-only (§2.6), so the session draws its
 own, as a game would:
 
-- The selected meshes get `renderCustomDepth` and a custom depth stencil value
-  (1 selected, 2 active), set as a preview prop override like any other edit;
-  leaving the selection puts the source's values back. A packed instance with
-  these props is moved into its own instance group by the renderer, as for any
-  other prop that differs.
-- While editing, `r.CustomDepth` is 3 (custom depth with stencil); the previous
-  value is restored on leaving.
-- An unbound post-process volume spawned for edit mode blends
-  `outline.material.tsx`, after tonemapping. It follows Blender's outline
-  detection (`draw/engines/overlay/shaders/overlay_outline_detect_frag.glsl`):
-  a pixel is on the outline when one of its four neighbours holds a different
-  stencil, on both sides of the silhouette, so the line is 2 px wide. Its colour
-  is the pixel's own stencil, or the neighbour's outside the object, in Blender's
-  theme colours (selected `#f15800`, active `#ffaa40`) at alpha 254/255. Where the
-  outlined surface is behind scene depth the line is drawn at alpha 0.35, as
-  Blender draws an occluded outline (`overlay_outline.hh`, `alpha_occlu`).
+- The selected meshes are drawn again, alone, by two depth captures spawned for
+  edit mode (`selectionLook.ts`): one `SceneCapture2D` for the selection
+  without the active object, one for the active object. Each has
+  `PRM_UseShowOnlyList`, `SCS_SceneDepth` into an `RTF_R32f` target the size of
+  the viewport, is attached to the view camera, captures every frame and ticks
+  while paused.
+- A capture's field of view is horizontal over its target. The game view's is
+  not: the local player keeps the vertical angle (`AspectRatio_MaintainYFOV`,
+  `BaseEngine.ini:2900`), computed from the camera's 90° at the camera's aspect
+  1.78 and widened to the viewport (`CameraStackTypes.cpp:286-333`), 93.1° on
+  1280 x 682. With 90° the capture drew the selection 1.056 times larger about
+  the screen centre, so the outline slid off the object more the farther it was
+  from the centre: a right edge at 1016 px in the view read 1036 in the capture.
+  The capture now gets the view's horizontal angle by the same rule. Read again,
+  the edges agree to 0-4 px; the view's side of that check is a line trace
+  against the collision mesh.
+- The captures exist because the stencil cannot give a steady line. Custom
+  depth and stencil are drawn at render resolution with the temporal jitter of
+  TSR; a post-process material after tonemapping runs after TSR
+  (`PostProcessing.cpp`, TSR around :1109-1190, the after-tonemapping chain at
+  :1676), so an edge read from the stencil moved by a fraction of a pixel each
+  frame and the 2 px line shimmered. Unreal's own editor draws its selection at
+  the unscaled output size with the jitter off
+  (`PostProcessCompositeEditorPrimitives.cpp:26`). A capture has no jitter when
+  its view has no temporal anti-aliasing: the view's method is none when the
+  family's `AntiAliasing` or `TemporalAA` show flag is off (`SceneView.cpp:1176`),
+  and jitter needs a temporal method (`SceneVisibility.cpp:5249`). Both flags are
+  off in the captures, with the lighting, shadow, fog and post flags a depth
+  image does not need.
+- The selected meshes still get `renderCustomDepth` and a custom depth stencil
+  value (1 selected, 2 active) as a preview prop override; leaving the selection
+  puts the source's values back. This is what moves a selected packed instance
+  into its own instance group, and the capture shows only the instance
+  components whose stencil is the one asked for.
+- An unbound post-process volume spawned for edit mode blends a dynamic instance
+  of `outline.material.tsx` with the two targets as `selectedDepth` and
+  `activeDepth`, after tonemapping, one texel of the target per output pixel
+  (`PostProcessInput0`'s `InvSize`). A pixel holds the active object where its
+  depth is captured and not behind the selection's, otherwise the selection
+  where captured (depth below 1e7 cm; an empty pixel reads 1e13). It follows
+  Blender's outline detection
+  (`draw/engines/overlay/shaders/overlay_outline_detect_frag.glsl`): a pixel is
+  on the outline when one of its four neighbours holds a different id, on both
+  sides of the silhouette, so the line is 2 px wide. Its colour is the pixel's
+  own id, or the neighbour's outside the object, in Blender's theme colours
+  (selected `#f15800`, active `#ffaa40`) at alpha 254/255. Where the captured
+  depth is behind scene depth the line is drawn at alpha 0.35, as Blender draws
+  an occluded outline (`overlay_outline.hh`, `alpha_occlu`).
 - Blender doubles the line when `U.pixelsize > 1` (`do_thick_outlines`). The
   game cannot read that factor from TypeScript (UMG's viewport scale is a DPI
   curve over the window size, 0.63 here, not the screen's scale), so the 2 px
   line is the only one.
 
-Read in the running game with the flight case selected: the mesh had
-`bRenderCustomDepth` true and stencil 2, `r.CustomDepth` 3, one unbound volume
-blending `/VgeLive/Materials/Outline_c918f0e614a7/Outline.Outline`; after the
-selection was cleared the mesh read false and 0.
+Read in the running game with the flight case selected, 864 cm from the camera:
+both targets 1280 x 682 as the viewport, attached to the edit camera's
+`CameraComponent` at the camera manager's location, field of view 90; the
+active capture showed one component, the other none. Read through a
+temporary `RTF_RGBA32f` target (`ReadRenderTargetRawPixel` does not read
+`R32f`): 766 cm at the case's centre, 749-782 across it, 1e13 outside it. The
+volume blended `MID_Outline` of
+`/VgeLive/Materials/Outline_bbebf7096b81/Outline.Outline`.
 
 ### Where it lives
 
@@ -922,6 +958,11 @@ a copy taken before:
   (`src/shared/react/renderer.ts`, `writeChangedActorTransform`,
   `writeChangedRelativeTransform`). Read in the game: yaw set to 77, `at` raised
   by 10 cm and back, yaw stayed 77.
+- **The outline slid off the object away from the screen centre**: the
+  capture used the camera's 90° as a horizontal angle (above).
+- **The 2 px outline shimmered.** It was read from the custom stencil, drawn
+  at render resolution with TSR's jitter, after TSR; it is now read from the
+  unjittered depth captures above.
 
 ### Not built yet
 
