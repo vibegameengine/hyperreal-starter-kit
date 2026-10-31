@@ -20,7 +20,7 @@ void BreakerProcessCrest(OceanShoreMath math, uint i, float2 pc, float m, inout 
   OceanShorePhase ph = math.PhaseAt(0, 1, pc);
   float depth = -math.WaveHeightAt(0, pc);
   float A = math.WaveAmp(m, ph.along);
-  OceanShoreBreak P = math.BreakParams(A, depth, math.AlongBlur(m, ph.along, depth));
+  OceanShoreBreak P = math.BreakParams(A, depth, math.AlongTaps(m, ph.along, depth));
   float env = smoothstep(26.0, 13.0, depth) * saturate(ph.exposure * 1.4);
   if (P.b > -0.6 && env > 0.3 && depth > 0.12) {
     float lam = sqrt(clamp(depth, 0.3, 25.0) * ${num(GRAVITY)}) * ${num(SHORE.period)};

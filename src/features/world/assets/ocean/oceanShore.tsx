@@ -13,10 +13,9 @@ export const SHORE = {
   gamma: 0.78,
   breakSpan: 0.13,
   curl: 1,
-  minTransition: 4,
+  alongSigma: 2.5,
   filmFloor: 0.35,
   filmReach: 1.6,
-  alongProbe: 1,
   runup: SWASH_RUNUP,
   turbidity: 0.16,
   beachSlope: 0.066,
@@ -132,15 +131,18 @@ const WAVES = `
     float db = pow(A * 3.556 / ${f(SHORE.gamma)}, 0.8);
     return (db - d) / (db * ${f(SHORE.breakSpan)});
   }
-  float AlongBlur(float m, float along, float d) {
-    float bL = BreakProgress(WaveAmp(m, along - ${f(SHORE.alongProbe)}), d);
-    float bR = BreakProgress(WaveAmp(m, along + ${f(SHORE.alongProbe)}), d);
-    return abs(bR - bL) * ${f((0.5 * SHORE.minTransition) / (2 * SHORE.alongProbe))};
+  float4 AlongTaps(float m, float along, float d) {
+    float s = ${f(SHORE.alongSigma)};
+    return float4(BreakProgress(WaveAmp(m, along - 2.0 * s), d), BreakProgress(WaveAmp(m, along - s), d), BreakProgress(WaveAmp(m, along + s), d), BreakProgress(WaveAmp(m, along + 2.0 * s), d));
   }
-  float Bs(OceanShoreBreak P, float e0, float e1) { return smoothstep(e0 - P.bw, e1 + P.bw, P.b); }
-  OceanShoreBreak BreakParams(float A, float d, float bw) {
+  float Bs(OceanShoreBreak P, float e0, float e1) {
+    float a = e0 - P.bw; float c = e1 + P.bw;
+    return (smoothstep(a, c, P.b) + (smoothstep(a, c, P.taps.y) + smoothstep(a, c, P.taps.z)) * ${f(Math.exp(-0.5))} + (smoothstep(a, c, P.taps.x) + smoothstep(a, c, P.taps.w)) * ${f(Math.exp(-2))}) * ${f(1 / (1 + 2 * Math.exp(-0.5) + 2 * Math.exp(-2)))};
+  }
+  OceanShoreBreak BreakParams(float A, float d, float4 taps) {
     OceanShoreBreak P;
-    P.bw = bw;
+    P.taps = taps;
+    P.bw = abs(taps.z - taps.y) * 0.5;
     P.db = pow(A * 3.556 / ${f(SHORE.gamma)}, 0.8);
     P.b = (P.db - d) / (P.db * ${f(SHORE.breakSpan)});
     float shoal = pow(10.0 / clamp(d, 0.35, 10.0), 0.25);
@@ -284,7 +286,7 @@ const WAVES = `
     float dB = BreakDepth(H, xz, ph.dir, u, lam, d);
     float env = smoothstep(26.0, 13.0, d) * smoothstep(-0.25, 0.05, d) * saturate(ph.exposure * 1.4) * enabled;
     float e = 0.15;
-    OceanShoreBreak P = BreakParams(A, dB, AlongBlur(m, ph.along, dB));
+    OceanShoreBreak P = BreakParams(A, dB, AlongTaps(m, ph.along, dB));
     OceanShoreProfile s0 = Profile(u, lam, P, true);
     OceanShoreProfile s1 = Profile(u - e / lam, lam, P, false);
     float face = s0.face * env;
@@ -339,7 +341,7 @@ const WAVES = `
       float u = ph.s - m;
       float A = WaveAmp(m, ph.along);
       float dB = BreakDepth(H, p, ph.dir, u, lam, d);
-      OceanShoreBreak P = BreakParams(A, dB, AlongBlur(m, ph.along, dB));
+      OceanShoreBreak P = BreakParams(A, dB, AlongTaps(m, ph.along, dB));
       OceanShoreProfile s0 = Profile(u, lam, P, false);
       float y0 = s0.y * env;
       if (y0 > A * 0.2 && P.b > -1.5) {
@@ -375,7 +377,7 @@ const WAVES = `
     float A = lerp(A0, An, smoothstep(0.32, 0.5, abs(u)) * 0.5);
     float dB = BreakDepth(H, xz, ph.dir, u, lam, d);
     float env = smoothstep(26.0, 13.0, d) * smoothstep(-0.25, 0.05, d) * saturate(ph.exposure * 1.4) * enabled;
-    OceanShoreBreak P = BreakParams(A, dB, AlongBlur(m, ph.along, dB));
+    OceanShoreBreak P = BreakParams(A, dB, AlongTaps(m, ph.along, dB));
     OceanShoreProfile s0 = Profile(u, lam, P, false);
     OceanShoreProfile s1 = Profile(u + s0.x * env / lam, lam, P, false);
     float whitewater = Whitewater(-u * lam, lam, P);
@@ -403,7 +405,7 @@ const WAVES = `
 `;
 
 export const shoreMath = (cascadeSizes: readonly number[], access: ShoreAccess = MATERIAL_ACCESS) => `
-struct OceanShoreBreak { float bw; float db; float b; float Ash; float p; float meanP; float crestPeak; float yc; float yt; float H; float wBore; float Xi; float Hb; float ycB; float ytB; float Xc; float Wt; };
+struct OceanShoreBreak { float4 taps; float bw; float db; float b; float Ash; float p; float meanP; float crestPeak; float yc; float yt; float H; float wBore; float Xi; float Hb; float ycB; float ytB; float Xc; float Wt; };
 struct OceanShoreProfile { float x; float y; float b; float foam; float face; float roller; };
 struct OceanShorePhase { float4 sh; float T; float2 dir; float exposure; float along; float s; };
 struct OceanShoreRunup { float tau; float Rt; float inland; float RhMax; float su; float sb; bool isUp; };
