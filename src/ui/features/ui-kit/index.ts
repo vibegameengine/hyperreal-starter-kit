@@ -5,8 +5,11 @@ export {
 } from './components/DemoSceneHud/DemoSceneHud'
 export { ControlButton, type ControlButtonVariant } from './components/ControlButton/ControlButton'
 export { ControlChoice, type ControlChoiceOption } from './components/ControlChoice/ControlChoice'
+export { ControlDropdown, type ControlDropdownOption } from './components/ControlDropdown/ControlDropdown'
 export { ControlPanel } from './components/ControlPanel/ControlPanel'
 export { ControlSlider } from './components/ControlSlider/ControlSlider'
+export { ControlNumber } from './components/ControlNumber/ControlNumber'
+export { ControlText } from './components/ControlText/ControlText'
 export {
   AudioSettingsControls,
   type AudioSettingsValues,

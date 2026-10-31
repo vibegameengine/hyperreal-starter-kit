@@ -1,0 +1,14 @@
+{
+  "source": "https://polyhaven.com (CC0). Fetched by node vge/tools/polyhaven.mjs into this folder; the files are not part of the kit.",
+  "textures": [
+    { "id": "sand_03", "resolution": "2k" },
+    { "id": "damp_beach_sand", "resolution": "2k" },
+    { "id": "coast_sand_04", "resolution": "2k" },
+    { "id": "grass_ground", "resolution": "2k" },
+    { "id": "seaside_rock", "resolution": "2k" },
+    { "id": "aerial_beach_01", "resolution": "2k" },
+    { "id": "coast_land_rocks_01", "resolution": "2k" },
+    { "id": "coast_sand_rocks_02", "resolution": "2k" },
+    { "id": "rock_face_03", "resolution": "2k" }
+  ]
+}

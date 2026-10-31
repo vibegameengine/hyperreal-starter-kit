@@ -101,7 +101,8 @@ export function writeProps(target: any, props: Record<string, any>, previous: Re
   if (!target) return;
   const className = target.GetClass().GetName();
   let written = false;
-  for (const prop of Object.keys(props)) {
+  const order = Object.keys(props).sort((a, b) => Number(b === 'mobility') - Number(a === 'mobility'));
+  for (const prop of order) {
     if (isReserved(prop) || same(props[prop], previous[prop])) continue;
     try {
       written = writeProp(target, className, prop, props[prop], previous[prop]) || written;

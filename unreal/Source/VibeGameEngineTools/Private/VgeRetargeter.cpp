@@ -1,6 +1,10 @@
 #include "VgeRetargeter.h"
 
 #include "Animation/AnimSequence.h"
+#include "Animation/AnimData/IAnimationDataController.h"
+#include "Curves/RichCurve.h"
+#include "JsonObjectConverter.h"
+#include "Animation/AnimData/IAnimationDataModel.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/SkeletalMesh.h"
 #include "FileHelpers.h"
@@ -95,6 +99,237 @@ namespace
 		return Retargeter;
 	}
 
+	bool GeneratesRootFromPelvis(const UIKRigDefinition* SourceRig, const UIKRigDefinition* TargetRig, const FAutoCharacterizeResults& Source, const FAutoCharacterizeResults& Target)
+	{
+		return TargetRig->GetSkeleton().BoneNames[0] != Target.AutoRetargetDefinition.RetargetDefinition.PelvisBone
+			&& SourceRig->GetSkeleton().BoneNames[0] == Source.AutoRetargetDefinition.RetargetDefinition.PelvisBone;
+	}
+
+	constexpr double RootSmoothingSeconds = 0.5;
+
+	constexpr double LoopSeamDegrees = 1.0;
+
+	bool IsSeamlessLoop(const UAnimSequence* Sequence)
+	{
+		const IAnimationDataModel* Model = Sequence->GetDataModel();
+		const FReferenceSkeleton& Skeleton = Sequence->GetSkeleton()->GetReferenceSkeleton();
+		bool bAnyTrack = false;
+		for (int32 Bone = 1; Bone < Skeleton.GetNum(); ++Bone)
+		{
+			const FName Name = Skeleton.GetBoneName(Bone);
+			if (!Model->IsValidBoneTrackName(Name))
+			{
+				continue;
+			}
+			TArray<FTransform> Keys;
+			Model->GetBoneTrackTransforms(Name, Keys);
+			if (Keys.Num() < 2)
+			{
+				continue;
+			}
+			bAnyTrack = true;
+			if (FMath::RadiansToDegrees(Keys[0].GetRotation().AngularDistance(Keys.Last().GetRotation())) > LoopSeamDegrees)
+			{
+				return false;
+			}
+		}
+		return bAnyTrack;
+	}
+
+	TArray<FVector> SmoothedTranslations(const TArray<FTransform>& Root, int32 HalfWindow)
+	{
+		TArray<FVector> Smoothed;
+		Smoothed.SetNum(Root.Num());
+		for (int32 Frame = 0; Frame < Root.Num(); ++Frame)
+		{
+			const int32 Reach = FMath::Min3(HalfWindow, Frame, Root.Num() - 1 - Frame);
+			FVector Sum = FVector::ZeroVector;
+			for (int32 Offset = -Reach; Offset <= Reach; ++Offset)
+			{
+				Sum += Root[Frame + Offset].GetTranslation();
+			}
+			Smoothed[Frame] = Sum / (2 * Reach + 1);
+			Smoothed[Frame].Z = Root[Frame].GetTranslation().Z;
+		}
+		return Smoothed;
+	}
+
+	TArray<double> UnwrappedYaws(const TArray<FTransform>& Root)
+	{
+		TArray<double> Yaws;
+		for (const FTransform& Key : Root)
+		{
+			const double Yaw = Key.Rotator().Yaw;
+			Yaws.Add(Yaws.IsEmpty() ? Yaw : Yaws.Last() + FMath::UnwindDegrees(Yaw - Yaws.Last()));
+		}
+		return Yaws;
+	}
+
+	TArray<FVector> StraightLoopTranslations(const TArray<FTransform>& Root)
+	{
+		const int32 Steps = Root.Num() - 1;
+		const FVector Start = Root[0].GetTranslation();
+		const FVector Travel = Root.Last().GetTranslation() - Start;
+		TArray<FVector> Straight;
+		for (int32 Frame = 0; Frame <= Steps; ++Frame)
+		{
+			FVector Point = Start + Travel * (static_cast<double>(Frame) / Steps);
+			Point.Z = Root[Frame].GetTranslation().Z;
+			Straight.Add(Point);
+		}
+		return Straight;
+	}
+
+	TArray<double> ConstantLoopYaws(const TArray<double>& Yaws)
+	{
+		double Sum = 0.0;
+		for (int32 Frame = 0; Frame < Yaws.Num() - 1; ++Frame)
+		{
+			Sum += Yaws[Frame];
+		}
+		TArray<double> Constant;
+		Constant.Init(Sum / (Yaws.Num() - 1), Yaws.Num());
+		return Constant;
+	}
+
+	TArray<double> SmoothedYaws(const TArray<double>& Yaws, int32 HalfWindow)
+	{
+		TArray<double> Smoothed;
+		Smoothed.SetNum(Yaws.Num());
+		for (int32 Frame = 0; Frame < Yaws.Num(); ++Frame)
+		{
+			const int32 Reach = FMath::Min3(HalfWindow, Frame, Yaws.Num() - 1 - Frame);
+			double Sum = 0.0;
+			for (int32 Offset = -Reach; Offset <= Reach; ++Offset)
+			{
+				Sum += Yaws[Frame + Offset];
+			}
+			Smoothed[Frame] = Sum / (2 * Reach + 1);
+		}
+		return Smoothed;
+	}
+
+	TArray<FVector> GlobalPositions(const UAnimSequence* Sequence, int32 Bone)
+	{
+		const IAnimationDataModel* Model = Sequence->GetDataModel();
+		const FReferenceSkeleton& Skeleton = Sequence->GetSkeleton()->GetReferenceSkeleton();
+		const int32 Frames = Model->GetNumberOfKeys();
+		TArray<FTransform> Global;
+		Global.Init(FTransform::Identity, Frames);
+		for (int32 Index = Bone; Index != INDEX_NONE; Index = Skeleton.GetParentIndex(Index))
+		{
+			TArray<FTransform> Local;
+			const FName Name = Skeleton.GetBoneName(Index);
+			if (Model->IsValidBoneTrackName(Name))
+			{
+				Model->GetBoneTrackTransforms(Name, Local);
+			}
+			for (int32 Frame = 0; Frame < Frames; ++Frame)
+			{
+				Global[Frame] = Global[Frame] * (Local.IsValidIndex(Frame) ? Local[Frame] : Skeleton.GetRefBonePose()[Index]);
+			}
+		}
+		TArray<FVector> Positions;
+		for (const FTransform& Transform : Global)
+		{
+			Positions.Add(Transform.GetLocation());
+		}
+		return Positions;
+	}
+
+	void AddSpeedCurves(UAnimSequence* Sequence, const TArray<TSharedPtr<FJsonValue>>& Curves)
+	{
+		const IAnimationDataModel* Model = Sequence->GetDataModel();
+		const FReferenceSkeleton& Skeleton = Sequence->GetSkeleton()->GetReferenceSkeleton();
+		const double Rate = Model->GetFrameRate().AsDecimal();
+		IAnimationDataController& Controller = Sequence->GetController();
+		IAnimationDataController::FScopedBracket Bracket(Controller, FText::FromString(TEXT("Speed curves")), false);
+		for (const TSharedPtr<FJsonValue>& Value : Curves)
+		{
+			const TSharedPtr<FJsonObject> Entry = Value->AsObject();
+			const int32 Bone = Entry ? Skeleton.FindBoneIndex(FName(*Entry->GetStringField(TEXT("bone")))) : INDEX_NONE;
+			if (Bone == INDEX_NONE)
+			{
+				continue;
+			}
+			const TArray<FVector> Positions = GlobalPositions(Sequence, Bone);
+			const int32 Last = Positions.Num() - 1;
+			if (Last < 1)
+			{
+				continue;
+			}
+			TArray<FRichCurveKey> Keys;
+			for (int32 Frame = 0; Frame <= Last; ++Frame)
+			{
+				const int32 Before = FMath::Max(Frame - 1, 0);
+				const int32 After = FMath::Min(Frame + 1, Last);
+				const double Speed = FVector::Dist(Positions[After], Positions[Before]) * Rate / (After - Before);
+				Keys.Add(FRichCurveKey(static_cast<float>(Frame / Rate), static_cast<float>(Speed)));
+			}
+			const FAnimationCurveIdentifier Id(FName(*Entry->GetStringField(TEXT("curve"))), ERawCurveTrackTypes::RCT_Float);
+			Controller.AddCurve(Id, 0x00000004, false);
+			Controller.SetCurveKeys(Id, Keys, false);
+		}
+	}
+
+	void SmoothRootTrack(UAnimSequence* Sequence, bool bLoop)
+	{
+		const IAnimationDataModel* Model = Sequence->GetDataModel();
+		const FReferenceSkeleton& Skeleton = Sequence->GetSkeleton()->GetReferenceSkeleton();
+		const FName RootName = Skeleton.GetBoneName(0);
+		TArray<FTransform> Root;
+		Model->GetBoneTrackTransforms(RootName, Root);
+		if (Root.Num() < 3)
+		{
+			return;
+		}
+		const int32 HalfWindow = FMath::Max(1, FMath::RoundToInt(Model->GetFrameRate().AsDecimal() * RootSmoothingSeconds * 0.5));
+		const TArray<FVector> Smoothed = bLoop ? StraightLoopTranslations(Root) : SmoothedTranslations(Root, HalfWindow);
+		const TArray<double> Yaws = UnwrappedYaws(Root);
+		const TArray<double> SmoothYaws = bLoop ? ConstantLoopYaws(Yaws) : SmoothedYaws(Yaws, HalfWindow);
+		TArray<FTransform> NewRoot = Root;
+		for (int32 Frame = 0; Frame < Root.Num(); ++Frame)
+		{
+			NewRoot[Frame].SetTranslation(Smoothed[Frame]);
+			NewRoot[Frame].SetRotation(FQuat(FRotator(0.0, SmoothYaws[Frame], 0.0)));
+		}
+
+		IAnimationDataController& Controller = Sequence->GetController();
+		IAnimationDataController::FScopedBracket Bracket(Controller, FText::FromString(TEXT("Smooth root motion")), false);
+		for (int32 Bone = 1; Bone < Skeleton.GetNum(); ++Bone)
+		{
+			const FName ChildName = Skeleton.GetBoneName(Bone);
+			if (Skeleton.GetParentIndex(Bone) != 0 || !Model->IsValidBoneTrackName(ChildName))
+			{
+				continue;
+			}
+			TArray<FTransform> Child;
+			Model->GetBoneTrackTransforms(ChildName, Child);
+			TArray<FVector> Positions;
+			TArray<FQuat> Rotations;
+			TArray<FVector> Scales;
+			for (int32 Frame = 0; Frame < Child.Num() && Frame < Root.Num(); ++Frame)
+			{
+				const FTransform World = Child[Frame] * Root[Frame];
+				const FTransform Local = World.GetRelativeTransform(NewRoot[Frame]);
+				Positions.Add(Local.GetTranslation());
+				Rotations.Add(Local.GetRotation());
+				Scales.Add(Local.GetScale3D());
+			}
+			Controller.SetBoneTrackKeys(ChildName, Positions, Rotations, Scales, false);
+		}
+		TArray<FVector> RootPositions;
+		TArray<FQuat> RootRotations;
+		TArray<FVector> RootScales;
+		for (const FTransform& Key : NewRoot)
+		{
+			RootPositions.Add(Key.GetTranslation());
+			RootRotations.Add(Key.GetRotation());
+			RootScales.Add(Key.GetScale3D());
+		}
+		Controller.SetBoneTrackKeys(RootName, RootPositions, RootRotations, RootScales, false);
+	}
+
 	TSharedRef<FJsonObject> Failure(const FString& Message)
 	{
 		UE_LOGF(LogVgeRetarget, Error, "%ls", *Message);
@@ -102,6 +337,30 @@ namespace
 		Report->SetStringField(TEXT("error"), Message);
 		return Report;
 	}
+}
+
+void VgeRetargeter::FinishSequence(UAnimSequence* Sequence, const TSharedPtr<FJsonObject>& Request, bool bRootFromPelvis)
+{
+	Sequence->Modify();
+	const bool bLoop = IsSeamlessLoop(Sequence);
+	if (bRootFromPelvis)
+	{
+		SmoothRootTrack(Sequence, bLoop);
+	}
+	const TArray<TSharedPtr<FJsonValue>>* SpeedCurves = nullptr;
+	if (Request->TryGetArrayField(TEXT("speedCurves"), SpeedCurves))
+	{
+		AddSpeedCurves(Sequence, *SpeedCurves);
+	}
+	Sequence->bLoop = bLoop;
+	Sequence->bEnableRootMotion = true;
+	Sequence->bForceRootLock = true;
+	const TSharedPtr<FJsonObject>* SequenceFields = nullptr;
+	if (Request->TryGetObjectField(TEXT("sequence"), SequenceFields))
+	{
+		FJsonObjectConverter::JsonObjectToUStruct((*SequenceFields).ToSharedRef(), UAnimSequence::StaticClass(), Sequence, 0, 0);
+	}
+	Sequence->PostEditChange();
 }
 
 TSharedRef<FJsonObject> VgeRetargeter::Retarget(const TSharedPtr<FJsonObject>& Request)
@@ -168,6 +427,7 @@ TSharedRef<FJsonObject> VgeRetargeter::Retarget(const TSharedPtr<FJsonObject>& R
 	Inputs.bOverwriteExistingFiles = true;
 	Inputs.bIncludeReferencedAssets = false;
 	const TArray<FAssetData> Retargeted = UIKRetargetBatchOperation::RunBatchRetarget(Inputs);
+	const bool bRootFromPelvis = GeneratesRootFromPelvis(SourceRig.Get(), TargetRig.Get(), SourceCharacterization, TargetCharacterization);
 
 	TArray<TSharedPtr<FJsonValue>> Objects;
 	TArray<UPackage*> Packages;
@@ -177,6 +437,10 @@ TSharedRef<FJsonObject> VgeRetargeter::Retarget(const TSharedPtr<FJsonObject>& R
 		if (!Object)
 		{
 			continue;
+		}
+		if (UAnimSequence* Sequence = Cast<UAnimSequence>(Object))
+		{
+			FinishSequence(Sequence, Request, bRootFromPelvis);
 		}
 		Packages.AddUnique(Object->GetPackage());
 		TSharedPtr<FJsonObject> Entry = MakeShared<FJsonObject>();

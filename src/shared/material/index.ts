@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import type { MaterialProps } from '../../../unreal/Typing/ue/ue-material-jsx';
-import type { DynamicMaterial, MaterialParam, MaterialParamValues, MaterialRef, MaterialTuple, MaterialValue, ParamOptions } from './types';
+import type { DynamicMaterial, MaterialParam, MaterialParamValues, MaterialRef, MaterialTuple, MaterialValue, ParamOptions, TextureParamOptions } from './types';
 
 export type * from './types';
 
@@ -11,7 +11,7 @@ export interface MaterialDefinition {
 }
 export interface InstanceDefinition {
   readonly kind: 'instance-definition';
-  readonly base: MaterialDefinition;
+  readonly base: MaterialDefinition | string;
   readonly params: MaterialParamValues;
 }
 
@@ -20,15 +20,15 @@ export function defineMaterial(element: ReactElement<MaterialProps>): MaterialRe
   return definition as unknown as MaterialRef;
 }
 
-export function defineInstance(base: MaterialRef, params: MaterialParamValues): MaterialRef {
-  const definition: InstanceDefinition = { kind: 'instance-definition', base: base as unknown as MaterialDefinition, params };
+export function defineInstance(base: MaterialRef | string, params: MaterialParamValues): MaterialRef {
+  const definition: InstanceDefinition = { kind: 'instance-definition', base: typeof base === 'string' ? base : (base as unknown as MaterialDefinition), params };
   return definition as unknown as MaterialRef;
 }
 
 export function param(name: string, value: number, options?: ParamOptions): MaterialParam;
 export function param(name: string, value: MaterialTuple, options?: Omit<ParamOptions, 'sliderMin' | 'sliderMax'>): MaterialParam;
-export function param(name: string, texture: string, options?: Omit<ParamOptions, 'sliderMin' | 'sliderMax'>): MaterialParam;
-export function param(name: string, value: number | MaterialTuple | string, options?: ParamOptions): MaterialParam {
+export function param(name: string, texture: string, options?: TextureParamOptions): MaterialParam;
+export function param(name: string, value: number | MaterialTuple | string, options?: ParamOptions | TextureParamOptions): MaterialParam {
   return { kind: 'param', name, value, options };
 }
 

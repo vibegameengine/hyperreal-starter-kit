@@ -1,0 +1,90 @@
+.root {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.button,
+.option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 22px;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  border: 1px solid rgb(161 221 255 / 22%);
+  border-radius: 4px;
+  background: rgb(120 199 239 / 7%);
+  color: rgb(238 250 255 / 88%);
+  cursor: pointer;
+  font: 700 10px/1.2 'Trebuchet MS', system-ui, sans-serif;
+  text-align: left;
+}
+
+.button:hover:not(:disabled),
+.option:hover {
+  border-color: rgb(161 221 255 / 45%);
+  background: rgb(120 199 239 / 14%);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.button > span:first-child,
+.option > span:first-child {
+  overflow: hidden;
+  flex: 1 1 auto;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  flex: 0 0 auto;
+  color: rgb(224 245 255 / 60%);
+}
+
+.note {
+  flex: 0 0 auto;
+  color: rgb(224 245 255 / 50%);
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.accent {
+  color: #ffd27a;
+}
+
+.list {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 2px);
+  right: 0;
+  left: 0;
+  max-height: 220px;
+  margin: 0;
+  padding: 3px;
+  overflow-y: auto;
+  border: 1px solid rgb(168 222 255 / 30%);
+  border-radius: 6px;
+  background: rgb(4 22 37 / 96%);
+  box-shadow: 0 9px 25px rgb(1 12 23 / 45%);
+  list-style: none;
+}
+
+.list li + li {
+  margin-top: 2px;
+}
+
+.option {
+  border-color: transparent;
+  background: transparent;
+}
+
+.option[aria-selected='true'] {
+  border-color: #91dcff;
+  background: rgb(94 200 255 / 20%);
+}

@@ -144,17 +144,6 @@ bool UVgeGameInstance::MountContent(const FString& PakPath, const FString& Plugi
 	return true;
 }
 
-bool UVgeGameInstance::UnmountContent(const FString& PakPath)
-{
-	if (!FCoreDelegates::OnUnmountPak.IsBound())
-	{
-		UE_LOGF(LogVge, Error, "UnmountContent: no pak platform file is active, cannot unmount %ls", *PakPath);
-		return false;
-	}
-	const bool bUnmounted = FCoreDelegates::OnUnmountPak.Execute(PakPath);
-	UE_LOGF(LogVge, Display, "UnmountContent: %ls %ls", *PakPath, bUnmounted ? TEXT("unmounted") : TEXT("was not mounted"));
-	return bUnmounted;
-}
 
 double UVgeGameInstance::SecondsSinceProcessStart() const
 {

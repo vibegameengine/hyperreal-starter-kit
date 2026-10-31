@@ -24,13 +24,13 @@ export function attributeOf(tag, name) {
   return tag.attributes.properties.find((attribute) => ts.isJsxAttribute(attribute) && attribute.name.getText() === name);
 }
 
-function unwrap(expression) {
+export function unwrap(expression) {
   let current = expression;
   while (current && (ts.isParenthesizedExpression(current) || ts.isAsExpression(current) || ts.isSatisfiesExpression(current) || ts.isNonNullExpression(current))) current = current.expression;
   return current;
 }
 
-const initializerOf = (attribute) => (attribute?.initializer && ts.isJsxExpression(attribute.initializer) ? unwrap(attribute.initializer.expression) : undefined);
+export const initializerOf = (attribute) => (attribute?.initializer && ts.isJsxExpression(attribute.initializer) ? unwrap(attribute.initializer.expression) : undefined);
 
 const isFunction = (node) => ts.isFunctionDeclaration(node) || ts.isArrowFunction(node) || ts.isFunctionExpression(node);
 
@@ -51,7 +51,7 @@ function componentNameOf(fn) {
   return undefined;
 }
 
-function propParameterOf(fn, localName) {
+export function propParameterOf(fn, localName) {
   const pattern = fn?.parameters[0]?.name;
   if (!pattern || !ts.isObjectBindingPattern(pattern)) return undefined;
   for (const element of pattern.elements) {
@@ -79,7 +79,7 @@ function constDeclaredIn(scope, identifier) {
   return found;
 }
 
-function constInitializerOf(identifier) {
+export function constInitializerOf(identifier) {
   for (let scope = enclosingFunction(identifier); scope; scope = enclosingFunction(scope)) {
     const found = constDeclaredIn(scope.body, identifier);
     if (found) return found;
@@ -87,7 +87,7 @@ function constInitializerOf(identifier) {
   return constDeclaredIn(identifier.getSourceFile(), identifier);
 }
 
-const numericValueOf = (expression) => {
+export const numericValueOf = (expression) => {
   const node = unwrap(expression);
   if (ts.isNumericLiteral(node)) return Number(node.text);
   if (ts.isPrefixUnaryExpression(node) && node.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(node.operand)) return -Number(node.operand.text);

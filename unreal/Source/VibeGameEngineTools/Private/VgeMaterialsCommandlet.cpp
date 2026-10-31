@@ -9,7 +9,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogVgeMaterials, Log, All);
 
 int32 UVgeMaterialsCommandlet::Main(const FString& Params)
 {
-	static const EMaterialUsage Usages[] = { MATUSAGE_SkeletalMesh, MATUSAGE_MorphTargets, MATUSAGE_Nanite, MATUSAGE_InstancedStaticMeshes, MATUSAGE_Clothing };
+	static const EMaterialUsage Usages[] = { MATUSAGE_SkeletalMesh, MATUSAGE_MorphTargets, MATUSAGE_Nanite, MATUSAGE_InstancedStaticMeshes, MATUSAGE_Clothing, MATUSAGE_GeometryCollections };
 
 	TArray<UPackage*> Packages;
 	for (const VgeImporter::FMasterSet& Set : VgeImporter::MasterSets())
@@ -47,7 +47,7 @@ int32 UVgeMaterialsCommandlet::Main(const FString& Params)
 				return 1;
 			}
 			Packages.Add(Copy->GetPackage());
-			UE_LOGF(LogVgeMaterials, Display, "%ls ready%ls", *Copy->GetPathName(), Refused.IsEmpty() ? TEXT(" with skeletal, morph target, Nanite, instancing and clothing usage") : *FString::Printf(TEXT(", refused usage %s"), *FString::Join(Refused, TEXT(", "))));
+			UE_LOGF(LogVgeMaterials, Display, "%ls ready%ls", *Copy->GetPathName(), Refused.IsEmpty() ? TEXT(" with skeletal, morph target, Nanite, instancing, clothing and geometry collection usage") : *FString::Printf(TEXT(", refused usage %s"), *FString::Join(Refused, TEXT(", "))));
 		}
 	}
 	return UEditorLoadingAndSavingUtils::SavePackages(Packages, false) ? 0 : 1;

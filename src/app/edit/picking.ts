@@ -25,9 +25,17 @@ function packedNodeAt(component: UE.InstancedStaticMeshComponent, index: number)
   return matches[0];
 }
 
+const PICKABLE_OBJECT_TYPES = [UE.EObjectTypeQuery.WorldStatic, UE.EObjectTypeQuery.WorldDynamic, UE.EObjectTypeQuery.Pawn, UE.EObjectTypeQuery.PhysicsBody, UE.EObjectTypeQuery.Vehicle, UE.EObjectTypeQuery.Destructible];
+
+function pickableObjectTypes() {
+  const types = UE.NewArray(UE.BuiltinByte) as unknown as UE.TArray<UE.EObjectTypeQuery>;
+  for (const type of PICKABLE_OBJECT_TYPES) types.Add(type);
+  return types;
+}
+
 export function nodeUnderCursor(controller: UE.PlayerController): HostNode | undefined {
   const hit = $ref(new UE.HitResult());
-  if (!controller.GetHitResultUnderCursorByChannel(UE.ETraceTypeQuery.TraceTypeQuery1, true, hit)) return undefined;
+  if (!controller.GetHitResultUnderCursorForObjects(pickableObjectTypes(), true, hit)) return undefined;
   const result = $unref(hit);
   const component = result.Component as UE.PrimitiveComponent | undefined;
   if (!component) return undefined;

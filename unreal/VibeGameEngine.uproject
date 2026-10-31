@@ -21,6 +21,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "ComputeFramework",
+			"Enabled": true
+		},
+		{
 			"Name": "VgeLive",
 			"Enabled": true
 		},
@@ -53,6 +57,32 @@
 		{
 			"Name": "NiagaraFluids",
 			"Enabled": true
+		},
+		{
+			"Name": "PoseSearch",
+			"Enabled": true
+		},
+		{
+			"Name": "AnimationWarping",
+			"Enabled": true
+		},
+		{
+			"Name": "Water",
+			"Enabled": true
+		},
+		{
+			"Name": "PCG",
+			"Enabled": true
+		},
+		{
+			"Name": "PCGToolset",
+			"Enabled": true,
+			"TargetAllowList": [ "Editor" ]
+		},
+		{
+			"Name": "DataflowAgent",
+			"Enabled": true,
+			"TargetAllowList": [ "Editor" ]
 		}
 	]
 }

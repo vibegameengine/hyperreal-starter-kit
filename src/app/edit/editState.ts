@@ -17,11 +17,20 @@ export interface WholeTarget {
   base?: number | number[];
 }
 
+export interface SourceProp {
+  name: string;
+  value?: unknown;
+  writable: boolean;
+  reason?: string;
+  fromDefault?: boolean;
+}
+
 export interface InspectResult {
   levels: { file: string; line: number; column: number; tag: string; matchesDisk: boolean }[];
   axes: (AxisTarget | null)[];
   rotation: WholeTarget | null;
   scale: WholeTarget | null;
+  props: (SourceProp[] | null)[];
   reasons: string[];
 }
 
@@ -37,6 +46,7 @@ export const editState = {
   selection: [] as Selected[],
   hoveredPart: undefined as GizmoPart | undefined,
   message: '',
+  paused: false,
 };
 
 export function report(message: string) {

@@ -17,6 +17,7 @@ const NAMED_KEYS: Record<string, { engine: string; label: string }> = {
   BACK_SPACE: { engine: 'BackSpace', label: 'Backspace' },
   DEL: { engine: 'Delete', label: 'Delete' },
   HOME: { engine: 'Home', label: 'Home' },
+  PAUSE: { engine: 'Pause', label: 'Pause' },
   ACCENT_GRAVE: { engine: 'Tilde', label: '`' },
   MINUS: { engine: 'Hyphen', label: '-' },
   PERIOD: { engine: 'Period', label: '.' },

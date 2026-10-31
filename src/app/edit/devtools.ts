@@ -34,7 +34,9 @@ export const creationStackOf = (fiber: any): string => currentOf(fiber)._debugSt
 
 export const propsOf = (fiber: any): Record<string, any> => currentOf(fiber).memoizedProps ?? {};
 
-export function overrideProp(fiber: any, prop: string, value: unknown) {
-  sceneRenderer().overrideProps(currentOf(fiber), [prop], value);
+export function overridePath(fiber: any, path: readonly (string | number)[], value: unknown) {
+  sceneRenderer().overrideProps(currentOf(fiber), [...path], value);
   flushSceneWork();
 }
+
+export const overrideProp = (fiber: any, prop: string, value: unknown) => overridePath(fiber, [prop], value);

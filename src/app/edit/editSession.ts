@@ -2,7 +2,7 @@ import * as UE from 'ue';
 import { $ref, $unref } from 'puerts';
 import { createElement } from 'react';
 import { releaseMouse } from '../../shared/engine/mouse';
-import { pauseWorldKeepingCamera, resumeWorld } from '../../shared/engine/pause';
+import { holdGameInput } from '../../shared/engine/gameInput';
 import { everyFrame, own, world } from '../../shared/engine/world';
 import { cancelModals, processInput, runningModal } from '../../shared/input';
 import { createSceneRoot, type SceneRoot } from '../../shared/react';
@@ -13,6 +13,8 @@ import { editState, report } from './editState';
 import { dot, normalize, sub, type Vec3 } from './gizmoMath';
 import { gizmoPartsOf } from './gizmoParts';
 import { fadeOf, gizmoUnitCentimetres, partUnderCursor, toVec3, toVector, viewAxisAlignment, viewFrameOf } from './gizmoView';
+import { onEditPauseChange, setEditPaused } from './editPause';
+import { hidePropCard, listenToPropCard, publishPropCard } from './propCardSession';
 import { hideSelection, showSelection } from './selectionLook';
 import { defineTransformModalKeymap, selectionPivot } from './transform';
 
@@ -34,12 +36,12 @@ function enterEditMode() {
   const rotator = controller.PlayerCameraManager.GetCameraRotation();
   store.camera = { location: toVec3(controller.PlayerCameraManager.GetCameraLocation()), rotation: [rotator.Pitch, rotator.Yaw, 0] };
   releaseMouse();
-  pauseWorldKeepingCamera();
+  holdGameInput(true);
   root = createSceneRoot(world);
   editOverlay.owns = (node) => root?.owns(node) ?? false;
   root.render(createElement(EditOverlay, { store, refs }));
   editState.active = true;
-  report('edit mode: the world is paused');
+  report('edit mode: the world runs, the player is left alone');
 }
 
 function exitEditMode() {
@@ -48,19 +50,21 @@ function exitEditMode() {
   cancelModals();
   editState.selection = [];
   hideSelection();
+  hidePropCard();
   root.unmount();
   root = undefined;
   editState.active = false;
   editState.selection = [];
   editState.hoveredPart = undefined;
-  resumeWorld();
+  setEditPaused(false);
+  holdGameInput(false);
   if (previousViewTarget) controller.SetViewTargetWithBlend(previousViewTarget, 0, UE.EViewTargetBlendFunction.VTBlend_Linear, 0, false);
   report('play mode');
 }
 
 declare const __vge: { app?: { scene?: string } };
 const currentScene = () => __vge.app?.scene;
-const announceMode = () => import.meta.hot?.send('vge:edit-mode-state', { scene: currentScene(), active: editState.active });
+const announceMode = () => import.meta.hot?.send('vge:edit-mode-state', { scene: currentScene(), active: editState.active, paused: editState.paused });
 const toggleEditMode = () => {
   if (editState.active) exitEditMode();
   else enterEditMode();
@@ -113,6 +117,7 @@ function editFrame() {
   if (editState.active) {
     showSelection();
     updateGizmo(controller);
+    publishPropCard(controller, Boolean(runningModal()));
   }
   processInput(controller);
 }
@@ -123,12 +128,15 @@ export function mountEditSession() {
   kitRoot.render(createElement(KitBindings, { toggleEditMode }));
   own(() => kitRoot.unmount(), 'app');
   everyFrame(editFrame, 'app', { tickEvenWhenPaused: true });
-  import.meta.hot?.on('vge:edit-mode', ({ scene, active }: { scene: string; active?: boolean }) => {
+  own(listenToPropCard(), 'app');
+  onEditPauseChange(announceMode);
+  import.meta.hot?.on('vge:edit-mode', ({ scene, active, paused }: { scene: string; active?: boolean; paused?: boolean }) => {
     if (scene !== currentScene()) return;
     if (active !== undefined && active !== editState.active) {
       toggleEditMode();
       UE.WidgetBlueprintLibrary.SetFocusToGameViewport();
     }
+    if (paused !== undefined && editState.active) setEditPaused(paused);
     announceMode();
   });
   own(() => exitEditMode(), 'app');

@@ -29,15 +29,26 @@ namespace VgeImporter
 	// Imports Source through Interchange into the Dest content path, enables Nanite on every static mesh it
 	// produced, moves material instances onto the project's master materials and saves the packages.
 	// Returns the report: source, dest, saved, objects[{path, class}].
-	TSharedRef<FJsonObject> Import(const FString& Source, const FString& Dest, const TSharedPtr<FJsonObject>& Cloth = nullptr);
+	TSharedRef<FJsonObject> Import(const FString& Source, const FString& Dest, const TSharedPtr<FJsonObject>& Cloth = nullptr, const TSharedPtr<FJsonObject>& MeshSettings = nullptr);
+
+	struct FImportRequest
+	{
+		FString Source;
+		FString Dest;
+		TSharedPtr<FJsonObject> Cloth;
+		TSharedPtr<FJsonObject> MeshSettings;
+	};
+
+	TArray<TSharedRef<FJsonObject>> ImportMany(const TArray<FImportRequest>& Requests);
 
 	// Imports only the animations of Source onto an existing skeleton (Interchange's "import only
 	// animations" with the skeleton set), into Dest. Returns the same report as Import.
-	TSharedRef<FJsonObject> ImportAnimations(const FString& Source, const FString& Dest, const FString& SkeletonPath);
+	TSharedRef<FJsonObject> ImportAnimations(const FString& Source, const FString& Dest, const FString& SkeletonPath, const TSharedPtr<FJsonObject>& Request);
 
 	TSharedRef<FJsonObject> ImportSound(const FString& Source, const FString& Dest);
 
 	// Removes every asset under a content path from memory, the asset registry and disk.
 	// Returns the number of packages deleted.
 	int32 DeleteContentPath(const FString& ContentPath);
+	int32 DeleteContentPaths(const TArray<FString>& ContentPaths);
 }

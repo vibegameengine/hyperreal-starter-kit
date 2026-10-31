@@ -1,7 +1,7 @@
 import * as UE from 'ue';
 import { useRef } from 'react';
 import { colored } from '../../../shared/engine/world';
-import { useFrame } from '../../../shared/react';
+import { defineEditable, useFrame } from '../../../shared/react';
 import type { Vector3 } from '../../../shared/react/props';
 
 export interface SpinningCubesProps {
@@ -35,3 +35,12 @@ export function SpinningCubes({ at, count = 5, degreesPerSecond = 90 }: Spinning
     </>
   );
 }
+
+defineEditable({
+  component: SpinningCubes,
+  title: 'Spinning cubes',
+  argTypes: {
+    count: { control: { type: 'range', min: 1, max: 10, step: 1 }, description: 'How many cubes stand in the row' },
+    degreesPerSecond: { name: 'Spin', control: { type: 'range', min: -360, max: 360, step: 5 }, description: 'Turn rate of every cube, degrees per second' },
+  },
+});

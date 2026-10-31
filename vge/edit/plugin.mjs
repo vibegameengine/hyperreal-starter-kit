@@ -1,4 +1,5 @@
 import { relative } from 'node:path';
+import { componentProps, pathEdit } from './propSource.mjs';
 import { createSourceLocator, sourceUrlPlugin } from './sourceLocator.mjs';
 import { analyseVector, analyseWhole, applyReplacements, levelOf, parseTsx, tagNameOf, valueEdit } from './tsxSource.mjs';
 import { createHistory, readSource, writeIfUnchanged } from './writer.mjs';
@@ -26,7 +27,7 @@ export function liveEditPlugins({ root }) {
   function inspect({ chain }) {
     const { levels, missing } = locateLevels(chain);
     const located = missing ? [missing] : [];
-    if (!levels.length) return { levels: [], axes: [null, null, null], rotation: null, scale: null, reasons: located };
+    if (!levels.length) return { levels: [], axes: [null, null, null], rotation: null, scale: null, props: [], reasons: located };
     const location = analyseVector({ levels, prop: 'location' });
     const rotation = analyseWhole({ levels, prop: 'rotation', neutral: [0, 0, 0] });
     const scale = analyseWhole({ levels, prop: 'scale', neutral: 1 });
@@ -35,20 +36,21 @@ export function liveEditPlugins({ root }) {
       axes: location.axes,
       rotation: rotation.target,
       scale: scale.target,
+      props: levels.map((_, level) => componentProps(levels, level) ?? null),
       reasons: [...located, ...location.reasons, ...rotation.reasons, ...scale.reasons],
     };
   }
 
   function commit({ edits }, client) {
     const byFile = new Map();
-    for (const { stack, prop, value } of edits) {
+    for (const { stack, prop, path, value } of edits) {
       const location = locator.locate(stack);
       if (location.outsideSources || location.reason) throw new Error(`an edited element has no source location${location.reason ? `: ${location.reason}` : ''}`);
       const disk = readSource(location.file).text;
       if (disk !== location.text) throw new Error(`${shortPath(location.file)} changed on disk after the game loaded it; select the object again`);
       let entry = byFile.get(location.file);
       if (!entry) byFile.set(location.file, (entry = { before: disk, sourceFile: parseTsx(location.file, disk), replacements: [] }));
-      entry.replacements.push(...valueEdit(disk, entry.sourceFile, location.offset, prop, value));
+      entry.replacements.push(...(path ? pathEdit(entry.sourceFile, location.offset, path, value) : valueEdit(disk, entry.sourceFile, location.offset, prop, value)));
     }
     const files = [];
     for (const [path, { before, replacements }] of byFile) {

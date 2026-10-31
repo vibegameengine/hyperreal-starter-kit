@@ -22,7 +22,7 @@ function* sourceFiles(dir) {
 }
 
 // `root` is the checkout (keys are paths relative to it), `srcDir` the folder of the game's code. Returns the keys of
-// the model imports and the models they are built on, the keys of the material and Niagara modules imported, and the
+// the model imports and the models they are built on, the keys of the material, Niagara and terrain modules imported, and the
 // files that could not be read (one being saved with a syntax error): with any, what is imported is not known.
 export async function importedContent({ root, srcDir }) {
   await init;
@@ -50,7 +50,7 @@ export async function importedContent({ root, srcDir }) {
         for (const model of modelsOf(spec)) models.add(model);
         continue;
       }
-      if (!/\.(material|niagara)(\.[jt]sx?)?$/.test(path)) continue;
+      if (!/\.(material|niagara|terrain|motion|compute|pcg|fracture)(\.[jt]sx?)?$/.test(path)) continue;
       const found = MODULE_EXTENSIONS.map((extension) => target + extension).find((candidate) => existsSync(candidate) && CODE.test(candidate));
       if (found) modules.add(keyOf(found));
     }

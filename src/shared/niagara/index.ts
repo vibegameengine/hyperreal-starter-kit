@@ -12,9 +12,9 @@ export type NiagaraValue =
   | { asset: string }
   | { dynamic: string; inputs?: Record<string, NiagaraValue> };
 
-export const user = (name: string): NiagaraValue => ({ link: `User.${name}` });
-export const attribute = (name: string): NiagaraValue => ({ link: `Particles.${name}` });
-export const linked = (name: string): NiagaraValue => ({ link: name });
+export const user = (name: string): { link: string } => ({ link: `User.${name}` });
+export const attribute = (name: string): { link: string } => ({ link: `Particles.${name}` });
+export const linked = (name: string): { link: string } => ({ link: name });
 export const hlsl = (expression: string): NiagaraValue => ({ hlsl: expression });
 export const option = (name: string): NiagaraValue => ({ option: name });
 export const asset = (path: string): NiagaraValue => ({ asset: path });
@@ -41,7 +41,7 @@ export interface NiagaraEmitter {
   properties?: Record<string, unknown>;
   remove?: string[];
   inputs?: Record<string, NiagaraValue>;
-  constants?: Record<string, number | boolean | NiagaraVector>;
+  constants?: Record<string, number | boolean | string | NiagaraVector | { link: string }>;
   modules?: NiagaraModule[];
   renderers?: NiagaraRenderer[];
 }

@@ -150,6 +150,14 @@ public:
 
 	const TMap<FName, double>& GetVariables() const { return Variables; }
 
+	struct FPendingNodeParam
+	{
+		FString NodeId;
+		FString Prop;
+		TSharedPtr<FJsonValue> Value;
+	};
+	TArray<FPendingNodeParam> TakePendingNodeParams() { return MoveTemp(PendingNodeParams); }
+
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
 	virtual void NativeInitializeAnimation() override;
@@ -157,6 +165,7 @@ protected:
 
 private:
 	TMap<FName, double> Variables;
+	TArray<FPendingNodeParam> PendingNodeParams;
 	// Between InitializeAnimation and UninitializeAnimation: the proxy runs the graph, so a new one takes over at
 	// once; before, it is only kept until initialization picks it up.
 	bool bRunning = false;

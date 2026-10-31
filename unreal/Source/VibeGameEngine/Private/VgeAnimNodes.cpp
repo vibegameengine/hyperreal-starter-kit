@@ -876,6 +876,104 @@ void FVgeAnimNode_TwoBoneIK::GatherDebugData(FNodeDebugData& DebugData)
 	ToLocal.GatherDebugData(DebugData);
 }
 
+bool FVgeAnimNode_SkeletalControl::SetControlStruct(const UScriptStruct* Struct)
+{
+	if (!Struct || !Struct->IsChildOf(FAnimNode_SkeletalControlBase::StaticStruct()))
+	{
+		return false;
+	}
+	if (Control.GetScriptStruct() != Struct)
+	{
+		Control.InitializeAs(Struct);
+	}
+	ToLocal.ComponentPose.SetLinkNode(Get());
+	Get()->ComponentPose.SetLinkNode(&ToComponent);
+	return true;
+}
+
+void FVgeAnimNode_SkeletalControl::Initialize_AnyThread(const FAnimationInitializeContext& Context)
+{
+	FAnimNode_Base::Initialize_AnyThread(Context);
+	if (Get())
+	{
+		ToLocal.Initialize_AnyThread(Context);
+	}
+	else
+	{
+		ToComponent.LocalPose.Initialize(Context);
+	}
+}
+
+void FVgeAnimNode_SkeletalControl::CacheBones_AnyThread(const FAnimationCacheBonesContext& Context)
+{
+	if (Get())
+	{
+		ToLocal.CacheBones_AnyThread(Context);
+	}
+	else
+	{
+		ToComponent.LocalPose.CacheBones(Context);
+	}
+}
+
+void FVgeAnimNode_SkeletalControl::Update_AnyThread(const FAnimationUpdateContext& Context)
+{
+	if (Get())
+	{
+		ToLocal.Update_AnyThread(Context);
+	}
+	else
+	{
+		ToComponent.LocalPose.Update(Context);
+	}
+}
+
+void FVgeAnimNode_SkeletalControl::Evaluate_AnyThread(FPoseContext& Output)
+{
+	if (Get())
+	{
+		ToLocal.Evaluate_AnyThread(Output);
+	}
+	else
+	{
+		ToComponent.LocalPose.Evaluate(Output);
+	}
+}
+
+void FVgeAnimNode_SkeletalControl::GatherDebugData(FNodeDebugData& DebugData)
+{
+	if (Get())
+	{
+		ToLocal.GatherDebugData(DebugData);
+	}
+	else
+	{
+		ToComponent.LocalPose.GatherDebugData(DebugData);
+	}
+}
+
+bool FVgeAnimNode_SkeletalControl::HasPreUpdate() const
+{
+	const FAnimNode_SkeletalControlBase* Node = Control.GetPtr<FAnimNode_SkeletalControlBase>();
+	return Node && Node->HasPreUpdate();
+}
+
+void FVgeAnimNode_SkeletalControl::PreUpdate(const UAnimInstance* InAnimInstance)
+{
+	if (FAnimNode_SkeletalControlBase* Node = Get())
+	{
+		Node->PreUpdate(InAnimInstance);
+	}
+}
+
+void FVgeAnimNode_SkeletalControl::ResetDynamics(ETeleportType InTeleportType)
+{
+	if (FAnimNode_SkeletalControlBase* Node = Get())
+	{
+		Node->ResetDynamics(InTeleportType);
+	}
+}
+
 FVgeAnimNode_AnimDynamics::FVgeAnimNode_AnimDynamics()
 {
 	ToLocal.ComponentPose.SetLinkNode(&Dynamics);

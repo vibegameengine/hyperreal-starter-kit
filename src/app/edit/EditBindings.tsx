@@ -1,5 +1,6 @@
 import { InputLayer, KeyBinding } from '../../shared/input';
 import { dragGizmo, redo, selectUnderCursor, setTool, toggleUnderCursor, undo } from './editActions';
+import { toggleEditPause } from './editPause';
 
 export type Navigation = 'orbit' | 'pan' | 'fly';
 
@@ -24,6 +25,7 @@ export function EditBindings({ navigation, gizmoHovered, navigate }: EditBinding
       <KeyBinding keys="G" label="Move tool" run={() => setTool('move')} />
       <KeyBinding keys="R" label="Rotate tool" run={() => setTool('rotate')} />
       <KeyBinding keys="S" label="Scale tool" run={() => setTool('scale')} />
+      <KeyBinding keys="Pause" label="Pause / resume the world" run={toggleEditPause} />
       <KeyBinding keys="Ctrl+Z" repeat label="Undo" run={undo} />
       <KeyBinding keys="Ctrl+Shift+Z" repeat label="Redo" run={redo} />
       <KeyBinding keys="LMB" on="CLICK" label="Select" run={selectUnderCursor} />

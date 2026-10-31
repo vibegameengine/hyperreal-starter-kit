@@ -10,6 +10,7 @@
 #include "AnimNodes/AnimNode_BlendListBase.h"
 #include "BoneControllers/AnimNode_AnimDynamics.h"
 #include "BoneControllers/AnimNode_TwoBoneIK.h"
+#include "StructUtils/InstancedStruct.h"
 #include "VgeAnimNodes.generated.h"
 
 class UBlendProfile;
@@ -387,6 +388,36 @@ struct FVgeAnimNode_TwoBoneIK : public FAnimNode_Base
 	virtual void Update_AnyThread(const FAnimationUpdateContext& Context) override;
 	virtual void Evaluate_AnyThread(FPoseContext& Output) override;
 	virtual void GatherDebugData(FNodeDebugData& DebugData) override;
+};
+
+USTRUCT()
+struct FVgeAnimNode_SkeletalControl : public FAnimNode_Base
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FAnimNode_ConvertComponentToLocalSpace ToLocal;
+
+	UPROPERTY()
+	FInstancedStruct Control;
+
+	UPROPERTY()
+	FAnimNode_ConvertLocalToComponentSpace ToComponent;
+
+	FPoseLink& Source() { return ToComponent.LocalPose; }
+	FAnimNode_SkeletalControlBase* Get() { return Control.GetMutablePtr<FAnimNode_SkeletalControlBase>(); }
+
+	bool SetControlStruct(const UScriptStruct* Struct);
+
+	virtual void Initialize_AnyThread(const FAnimationInitializeContext& Context) override;
+	virtual void CacheBones_AnyThread(const FAnimationCacheBonesContext& Context) override;
+	virtual void Update_AnyThread(const FAnimationUpdateContext& Context) override;
+	virtual void Evaluate_AnyThread(FPoseContext& Output) override;
+	virtual void GatherDebugData(FNodeDebugData& DebugData) override;
+	virtual bool HasPreUpdate() const override;
+	virtual void PreUpdate(const UAnimInstance* InAnimInstance) override;
+	virtual bool NeedsDynamicReset() const override { return true; }
+	virtual void ResetDynamics(ETeleportType InTeleportType) override;
 };
 
 USTRUCT()

@@ -1,6 +1,7 @@
 import * as UE from 'ue';
 import { $ref, $unref } from 'puerts';
 import { useEffect, useRef } from 'react';
+import { isGameInputHeld } from '../../shared/engine/gameInput';
 import { releaseMouse } from '../../shared/engine/mouse';
 import { viewFrom, world } from '../../shared/engine/world';
 import { useFrame } from '../../shared/react';
@@ -39,7 +40,7 @@ function orbitFrom(location: Vector3, rotation: Vector3, focus?: Vector3): Orbit
   return { focus: [location[0] + forward[0] * along, location[1] + forward[1] * along, location[2] + forward[2] * along], yaw, pitch, distance: along };
 }
 
-function withoutMotionBlur(component: UE.CameraComponent) {
+export function withoutMotionBlur(component: UE.CameraComponent) {
   const settings = component.PostProcessSettings;
   settings.bOverride_MotionBlurAmount = true;
   settings.MotionBlurAmount = 0;
@@ -87,7 +88,7 @@ export function OrbitCamera({ location, rotation, focus, editing = false, naviga
   useFrame((deltaSeconds) => {
     const actor = camera.current;
     const controller = UE.GameplayStatics.GetPlayerController(world, 0);
-    if (!actor || !controller) return;
+    if (!actor || !controller || (!editing && isGameInputHeld())) return;
     const view = orbit.current;
     const down = (key: UE.Key) => controller.IsInputKeyDown(key);
     const alt = down(KEYS.leftAlt) || down(KEYS.rightAlt);

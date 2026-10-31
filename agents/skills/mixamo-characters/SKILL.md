@@ -53,3 +53,31 @@ import mixamoMoves from './default-humanoid.fbx?retargetFrom=manny';            
 
 None of this needs the kit's C++ or the importer changed (AGENTS.md, "pick the layer"): a character that imports
 wrong is fixed in its files.
+
+## When the rig has to go through Blender
+
+Import the FBX Mixamo gave whenever you can. Blender is unavoidable only when the rig changes after Mixamo: bones
+added (soft tissue, hair and strap chains for AnimDynamics), the mesh split into parts (body, head, hair as separate
+meshes), weights edited. Then the export goes through one script and nothing else:
+
+```bash
+blender -b --factory-startup -P agents/skills/mixamo-characters/scripts/export-mixamo-rig.py -- <rig.blend | mixamo.fbx> <out.fbx>
+blender -b --factory-startup -P agents/skills/mixamo-characters/scripts/export-mixamo-rig.py -- --check <some.fbx>
+```
+
+It applies every transform, stores bones and vertices in centimetres with `UnitScaleFactor 1` (the way the Mixamo
+file itself is written), adds a `root` bone at the floor above `Hips`, saves the textures beside the output so they
+are embedded, exports, then reads the written FBX back and exits non-zero unless `UnitScaleFactor` is 1, `Hips` sits
+30-300 cm from its parent and that parent is `root`. `--check` runs only the read-back on an existing file.
+
+Two defects this prevents, each with what it looks like in the game:
+
+| In the game | Cause in the file |
+|---|---|
+| The skeleton is about 1.3 cm tall: `Hips` at a normal height but every child bone within a centimetre of it (the mesh may still draw at full size). | Blender's FBX export with the scene in metres writes `UnitScaleFactor 100` and bone offsets in metres. The factor reaches only the root; every child offset is read as centimetres. `FBX_SCALE_ALL` and `FBX_SCALE_UNITS` only move the 100 between the header and the armature node, so neither fixes it. |
+| After `?retargetFrom=manny` the legs walk but the pelvis is frozen: no bob, no hip sway on walk, jog and run. | `Hips` is the skeleton's root. Manny's retargeted clips keep `bForceRootLock`, which on Manny locks his separate `root` bone; on a skeleton without one it locks the pelvis. With a `root` above `Hips` the retargeter keeps its root-motion op on and copies Manny's `root` onto it (`VgeRetargeter.cpp`); the lock then holds `root`, and the pelvis animates. |
+
+After a rebuild of the model, a player or character already spawned with the previous build's clips keeps their deleted
+paths and stands still, and one whose mesh is swapped in place under a running graph freezes the same way. The model
+and its `retargetFrom` clips arrive as separate builds in either order: key the player on both the mesh path and the
+clip path so it respawns when either changes.

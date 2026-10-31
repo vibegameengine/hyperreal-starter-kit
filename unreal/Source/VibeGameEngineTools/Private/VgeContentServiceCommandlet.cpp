@@ -8,11 +8,15 @@
 #include "HAL/Runnable.h"
 #include "HAL/RunnableThread.h"
 #include "Misc/CoreDelegates.h"
+#include "VgeComputeBuilder.h"
 #include "VgeFab.h"
 #include "VgeImporter.h"
 #include "VgeMaterialBuilder.h"
 #include "VgeNiagara.h"
+#include "VgeObjects.h"
 #include "VgeRetargeter.h"
+#include "VgeMotionMatching.h"
+#include "VgeTerrain.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
@@ -59,19 +63,61 @@ namespace
 	{
 		const FString Command = Request->GetStringField(TEXT("cmd"));
 		TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
-		if (Command == TEXT("import"))
+		if (Command == TEXT("many"))
+		{
+			TArray<TSharedPtr<FJsonValue>> Results;
+			for (const TSharedPtr<FJsonValue>& Item : Request->GetArrayField(TEXT("requests")))
+			{
+				Results.Add(MakeShared<FJsonValueObject>(Handle(Item->AsObject())));
+			}
+			Result->SetArrayField(TEXT("results"), Results);
+		}
+		else if (Command == TEXT("import"))
 		{
 			const TSharedPtr<FJsonObject>* Cloth = nullptr;
 			Request->TryGetObjectField(TEXT("cloth"), Cloth);
-			Result = VgeImporter::Import(Request->GetStringField(TEXT("source")), Request->GetStringField(TEXT("dest")), Cloth ? *Cloth : nullptr);
+			const TSharedPtr<FJsonObject>* MeshSettings = nullptr;
+			Request->TryGetObjectField(TEXT("mesh"), MeshSettings);
+			Result = VgeImporter::Import(Request->GetStringField(TEXT("source")), Request->GetStringField(TEXT("dest")), Cloth ? *Cloth : nullptr, MeshSettings ? *MeshSettings : nullptr);
 			if (!Result->GetBoolField(TEXT("saved")))
 			{
 				Result->SetStringField(TEXT("error"), TEXT("nothing was imported; see the service log"));
 			}
 		}
+		else if (Command == TEXT("import-many"))
+		{
+			TArray<VgeImporter::FImportRequest> Requests;
+			for (const TSharedPtr<FJsonValue>& Value : Request->GetArrayField(TEXT("items")))
+			{
+				const TSharedPtr<FJsonObject> Item = Value->AsObject();
+				VgeImporter::FImportRequest& Import = Requests.AddDefaulted_GetRef();
+				Import.Source = Item->GetStringField(TEXT("source"));
+				Import.Dest = Item->GetStringField(TEXT("dest"));
+				const TSharedPtr<FJsonObject>* Cloth = nullptr;
+				if (Item->TryGetObjectField(TEXT("cloth"), Cloth))
+				{
+					Import.Cloth = *Cloth;
+				}
+				const TSharedPtr<FJsonObject>* MeshSettings = nullptr;
+				if (Item->TryGetObjectField(TEXT("mesh"), MeshSettings))
+				{
+					Import.MeshSettings = *MeshSettings;
+				}
+			}
+			TArray<TSharedPtr<FJsonValue>> Reports;
+			for (const TSharedRef<FJsonObject>& Report : VgeImporter::ImportMany(Requests))
+			{
+				if (!Report->GetBoolField(TEXT("saved")))
+				{
+					Report->SetStringField(TEXT("itemError"), TEXT("nothing was imported; see the service log"));
+				}
+				Reports.Add(MakeShared<FJsonValueObject>(Report));
+			}
+			Result->SetArrayField(TEXT("items"), Reports);
+		}
 		else if (Command == TEXT("import-animations"))
 		{
-			Result = VgeImporter::ImportAnimations(Request->GetStringField(TEXT("source")), Request->GetStringField(TEXT("dest")), Request->GetStringField(TEXT("skeleton")));
+			Result = VgeImporter::ImportAnimations(Request->GetStringField(TEXT("source")), Request->GetStringField(TEXT("dest")), Request->GetStringField(TEXT("skeleton")), Request);
 			if (!Result->HasField(TEXT("error")) && !Result->GetBoolField(TEXT("saved")))
 			{
 				Result->SetStringField(TEXT("error"), TEXT("no animation was imported; see the service log"));
@@ -97,6 +143,10 @@ namespace
 		{
 			Result = VgeMaterialBuilder::BuildMaterialInstance(Request);
 		}
+		else if (Command == TEXT("compute"))
+		{
+			Result = VgeComputeBuilder::Build(Request);
+		}
 		else if (Command == TEXT("niagara-tools"))
 		{
 			Result = VgeNiagara::RunTools(Request);
@@ -113,9 +163,34 @@ namespace
 		{
 			Result = VgeNiagara::SetConstants(Request);
 		}
+		else if (Command == TEXT("terrain"))
+		{
+			Result = VgeTerrain::Build(Request);
+		}
+		else if (Command == TEXT("motion-matching"))
+		{
+			Result = VgeMotionMatching::Build(Request);
+		}
+		else if (Command == TEXT("set-properties"))
+		{
+			Result = VgeObjects::SetProperties(Request);
+		}
+		else if (Command == TEXT("save"))
+		{
+			Result = VgeObjects::Save(Request);
+		}
+		else if (Command == TEXT("call"))
+		{
+			Result = VgeObjects::Call(Request);
+		}
 		else if (Command == TEXT("delete"))
 		{
-			Result->SetNumberField(TEXT("deleted"), VgeImporter::DeleteContentPath(Request->GetStringField(TEXT("path"))));
+			TArray<FString> Paths;
+			if (!Request->TryGetStringArrayField(TEXT("paths"), Paths))
+			{
+				Paths.Add(Request->GetStringField(TEXT("path")));
+			}
+			Result->SetNumberField(TEXT("deleted"), VgeImporter::DeleteContentPaths(Paths));
 		}
 		else if (Command != TEXT("ping"))
 		{

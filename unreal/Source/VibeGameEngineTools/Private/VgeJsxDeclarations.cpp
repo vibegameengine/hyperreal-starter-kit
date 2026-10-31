@@ -201,6 +201,13 @@ namespace
 		TSharedPtr<FJsonObject> Runtime;
 	};
 
+	const UClass* ComponentClassOf(const UClass* Owner, const FProperty* Property)
+	{
+		const FObjectProperty* Object = CastField<FObjectProperty>(Property);
+		const UObject* Component = Object && Owner->IsChildOf(Object->GetOwnerClass()) ? Object->GetObjectPropertyValue_InContainer(Owner->GetDefaultObject()) : nullptr;
+		return Component ? Component->GetClass() : Object->PropertyClass.Get();
+	}
+
 	FClassOutput DescribeClass(const UClass* Class)
 	{
 		const UClass* Parent = Class->GetSuperClass();
@@ -229,14 +236,21 @@ namespace
 			else if (IsComponentPointer(Property))
 			{
 				PropName = CamelCase(Property->GetName());
-				Type = FString::Printf(TEXT("Partial<%sProps>"), *CastField<FObjectProperty>(Property)->PropertyClass->GetName());
+				Type = FString::Printf(TEXT("Partial<%sProps>"), *ComponentClassOf(Class, Property)->GetName());
 			}
 			else
 			{
 				PropName = CamelCase(WithoutBoolPrefix(Property));
 				Type = TsType(Property);
 			}
-			if (Type.IsEmpty() || Seen.Contains(PropName))
+			const UFunction* Setter = nullptr;
+			if (!CastField<FMulticastDelegateProperty>(Property) && !IsComponentPointer(Property))
+			{
+				// Sequencer's rule for a property set from outside: a UFunction "Set<Name>" with a parameter.
+				Setter = Class->FindFunctionByName(FName(TEXT("Set") + WithoutBoolPrefix(Property)));
+				Setter = Setter && Setter->NumParms >= 1 ? Setter : nullptr;
+			}
+			if (Type.IsEmpty() || Seen.Contains(PropName) || (Property->HasAnyPropertyFlags(CPF_EditorOnly) && !Setter))
 			{
 				continue;
 			}
@@ -244,16 +258,29 @@ namespace
 			Body += FString::Printf(TEXT("  %s?: %s;\n"), *PropName, *Type);
 
 			TArray<TSharedPtr<FJsonValue>> Entry = { MakeShared<FJsonValueString>(Property->GetName()), MakeShared<FJsonValueString>(Kind(Property)) };
-			if (!CastField<FMulticastDelegateProperty>(Property) && !IsComponentPointer(Property))
+			if (Setter)
 			{
-				// Sequencer's rule for a property set from outside: a UFunction "Set<Name>" with a parameter.
-				const UFunction* Setter = Class->FindFunctionByName(FName(TEXT("Set") + WithoutBoolPrefix(Property)));
-				if (Setter && Setter->NumParms >= 1)
-				{
-					Entry.Add(MakeShared<FJsonValueString>(Setter->GetName()));
-				}
+				Entry.Add(MakeShared<FJsonValueString>(Setter->GetName()));
 			}
 			Props->SetArrayField(PropName, Entry);
+		}
+
+		for (TFieldIterator<FProperty> It(Parent); It && !bRoot; ++It)
+		{
+			const FProperty* Property = *It;
+			if (!IsComponentPointer(Property) || !IsProp(Property) || Property->HasAnyPropertyFlags(CPF_EditorOnly))
+			{
+				continue;
+			}
+			const UClass* Here = ComponentClassOf(Class, Property);
+			const FString PropName = CamelCase(Property->GetName());
+			if (Here == ComponentClassOf(Parent, Property) || Seen.Contains(PropName))
+			{
+				continue;
+			}
+			Seen.Add(PropName);
+			Body += FString::Printf(TEXT("  %s?: Partial<%sProps>;\n"), *PropName, *Here->GetName());
+			Props->SetArrayField(PropName, { MakeShared<FJsonValueString>(Property->GetName()), MakeShared<FJsonValueString>(Kind(Property)) });
 		}
 
 		// Settings that live behind a Blueprint setter with no property of their own (SetSimulatePhysics writes into

@@ -103,14 +103,18 @@ class GraphBuilder {
 
   private param(p: MaterialParam, where: string): number {
     const type: MaterialParamType = typeof p.value === 'number' ? 'scalar' : typeof p.value === 'string' ? 'texture' : 'vector';
-    const signature = JSON.stringify([type, p.value, p.options ?? {}]);
+    const { coordinates, ...settings } = (p.options ?? {}) as Record<string, unknown>;
+    const signature = JSON.stringify([type, p.value, settings]);
     const previous = this.paramValues.get(p.name);
     if (previous !== undefined && previous !== signature) throw new Error(`${where}: parameter '${p.name}' is given two different defaults or types`);
     this.paramValues.set(p.name, signature);
     this.params[p.name] = type;
-    const options = (json(p.options ?? {}, where) as Record<string, unknown>) ?? {};
+    const options = (json(settings, where) as Record<string, unknown>) ?? {};
     if (type === 'scalar') return this.add({ class: 'MaterialExpressionScalarParameter', props: { parameterName: p.name, defaultValue: p.value, ...options }, inputs: {} });
-    if (type === 'texture') return this.add({ class: 'MaterialExpressionTextureSampleParameter2D', props: { parameterName: p.name, texture: p.value, ...options }, inputs: {} });
+    if (type === 'texture') {
+      const uv = coordinates === undefined ? undefined : this.link(coordinates, `${where} '${p.name}'.coordinates`);
+      return this.add({ class: 'MaterialExpressionTextureSampleParameter2D', props: { parameterName: p.name, texture: p.value, ...options }, inputs: uv ? { coordinates: uv } : {} });
+    }
     const v = p.value as readonly number[];
     return this.add({ class: 'MaterialExpressionVectorParameter', props: { parameterName: p.name, defaultValue: [v[0] ?? 0, v[1] ?? 0, v[2] ?? 0, v[3] ?? 1], ...options }, inputs: {} });
   }
@@ -174,7 +178,11 @@ export function describeMaterial(definition: MaterialDefinition, folderRoot: str
   const outputs: Record<string, Link> = {};
   let usage: string[] = [];
   for (const [prop, value] of Object.entries(root.props as Record<string, unknown>)) {
-    if (prop === 'children' || prop === 'key' || value === undefined) continue;
+    if (prop === 'children') {
+      [value].flat().filter(isValidElement).forEach((child, index) => graph.link(child, `<material> output node ${index}`));
+      continue;
+    }
+    if (prop === 'key' || value === undefined) continue;
     if (prop === 'usage') usage = (value as string[]).map(capitalize);
     else if (entry.inputs.includes(prop)) {
       const link = graph.link(value, `<material>.${prop}`);
@@ -185,6 +193,13 @@ export function describeMaterial(definition: MaterialDefinition, folderRoot: str
   const folder = `${folderRoot}/${name}_${hashOf(JSON.stringify([FORMAT, name, description]))}`;
   const path = `${folder}/${name}.${name}`;
   return { kind: 'material', folder, path, usage, params: graph.params, request: { path: `${folder}/${name}`, ...description } };
+}
+
+export function engineMaterial(path: string, values: MaterialParamValues): MaterialAsset {
+  const params = Object.fromEntries(
+    Object.entries(values).map(([name, value]) => [name, typeof value === 'number' ? 'scalar' : typeof value === 'string' ? 'texture' : 'vector'] as const),
+  ) as Record<string, MaterialParamType>;
+  return { kind: 'material', folder: '', path, usage: [], params, request: {} as MaterialRequest };
 }
 
 export function describeInstance(definition: InstanceDefinition, base: MaterialAsset, folderRoot: string, name: string): MaterialAsset {
@@ -235,8 +250,10 @@ export function describeModule(fileKey: string, moduleExports: Record<string, un
     try {
       if (isDefinition(value)) {
         result.push({ ...materialOf(value), exportName, exportKey });
+      } else if (isInstanceDefinition(value) && typeof value.base === 'string') {
+        result.push({ ...describeInstance(value, engineMaterial(value.base, value.params), folderRoot, name), exportName, exportKey });
       } else if (isInstanceDefinition(value)) {
-        if (!isDefinition(value.base)) throw new Error('defineInstance takes a material made with defineMaterial');
+        if (!isDefinition(value.base)) throw new Error('defineInstance takes a material made with defineMaterial, or an asset path');
         const base = materialOf(value.base);
         result.push({ ...describeInstance(value, base, folderRoot, name), exportName, exportKey, base });
       }

@@ -1,0 +1,75 @@
+.card {
+  position: fixed;
+  top: 50%;
+  z-index: 10;
+  max-height: calc(100vh - 24px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  transform: translateY(-50%);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.label {
+  overflow: hidden;
+  color: rgb(224 245 255 / 72%);
+  font: 800 9px/1 'Trebuchet MS', system-ui, sans-serif;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control {
+  display: flex;
+  min-width: 0;
+}
+
+.control > * {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.vector {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 3px;
+  min-width: 0;
+}
+
+.group,
+.liveGroup {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: #9adcfb;
+  font: 900 8px/1.4 'Trebuchet MS', system-ui, sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.liveGroup {
+  color: #ffd27a;
+}
+
+.liveGroup output {
+  color: rgb(255 210 122 / 75%);
+  letter-spacing: 0.04em;
+}
+
+.empty {
+  margin: 4px 0 0;
+  font-size: 11px;
+  opacity: 0.7;
+}

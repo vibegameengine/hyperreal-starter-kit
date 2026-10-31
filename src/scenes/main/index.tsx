@@ -39,7 +39,7 @@ export function Scene() {
       <Stairs at={[-150, 400, 0]} steps={12} />
       <BoxPyramid at={[350, -250, 0]} rows={5} />
       <SpinningCubes at={[350, 350, 100]} count={3} />
-      <LiveAsset asset={flightCase} at={[-100, -195.63, 116.49]} />
+      <LiveAsset asset={flightCase} at={[-260.08, -260.19, 114.84]} turnDegreesPerSecond={27.4} />
       {raining && <SphereRain at={[0, 0, 0]} area={700} everyMs={250} max={40} />}
     </>
   );
