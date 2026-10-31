@@ -52,7 +52,6 @@ const shoreSand = (
       St: shoreTexture('OceanShoreState'),
       Lc: <textureObjectParameter parameterName="OceanLace" texture="/Engine/EngineMaterials/DefaultDiffuse_TC_Masks" samplerType="Masks" />,
       shoreOn: <scalarParameter parameterName="OceanShoreEnabled" defaultValue={0} />,
-      layersOff: <scalarParameter parameterName="OceanLayersOff" defaultValue={0} />,
       Tr: <textureObjectParameter parameterName="SandTrail" texture="/Engine/EngineMaterials/DefaultDiffuse_TC_Masks" samplerType="Masks" />,
       trailWin: <vectorParameter parameterName="SandTrailWindow" defaultValue={[0, 0, 0, 0]} />,
     }}
@@ -67,9 +66,7 @@ float2 uv = (xz - ${f(SHORE_ORIGIN)}) / ${f(SHORE_EXTENT)};
 float inside = smoothstep(0.0, 0.02, uv.x) * smoothstep(1.0, 0.98, uv.x) * smoothstep(0.0, 0.02, uv.y) * smoothstep(1.0, 0.98, uv.y) * step(0.5, shoreOn);
 float4 s = inside > 0.0 ? St.SampleLevel(StSampler, uv, 0.0) * inside : 0.0;
 float band = smoothstep(0.45, 0.0, h);
-uint off = uint(layersOff + 0.5);
-float wet = saturate(max(s.y, band * (1.0 - inside))) * ((off & 8u) != 0u ? 0.0 : 1.0);
-s.z *= (off & 16u) != 0u ? 0.0 : 1.0;
+float wet = saturate(max(s.y, band * (1.0 - inside)));
 float fp = length(fwidth(xz)) / ${f(LACE_TILE)} * ${f(LACE_SIZE)};
 float residue = 0.0;
 if (s.z > 0.01) {

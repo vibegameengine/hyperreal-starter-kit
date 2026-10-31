@@ -17,7 +17,6 @@ const FOAM_ALBEDO = 0.85;
 const FOAM_SCALE = 0.09;
 const NEAR = { k1: 7.3, k2: 3.1, a1: 0.63, a2: 2.14 };
 const SWASH_ONSET = SHORE.swashOnset;
-const SWASH_FOAM_END = 0.9;
 const RIPPLE_DEPTH = { dry: 0.0, full: 0.6 };
 const fixed = (value: number) => value.toFixed(6);
 const vec3 = (values: readonly number[]) => `float3(${values.map(fixed).join(', ')})`;
@@ -172,7 +171,6 @@ const surface = (
       view: <cameraVectorWS />,
       eye: <cameraPositionWS />,
       facing: <twoSidedSign />,
-      layersOff: <scalarParameter parameterName="OceanLayersOff" defaultValue={0} />,
       sun: <skyAtmosphereLightDirection lightIndex={0} />,
       sunIllum: <skyAtmosphereLightIlluminance lightIndex={0} />,
       ...shoreTextures,
@@ -240,13 +238,11 @@ float bead = smoothstep(-0.01, 0.05, frontD) * smoothstep(0.6, 0.12, frontD);
 float trail = smoothstep(-0.01, 0.25, frontD) * smoothstep(2.2, 0.3, frontD);
 float edgePatch = 1.0;
 if (swRt > 0.0 && depth < 0.4) edgePatch = smoothstep(-0.45, 0.55, math.Perlin2(xz * 0.42)) * 0.7 + smoothstep(-0.3, 0.6, math.Perlin2(xz * 1.7 + float2(3.1, 7.7))) * 0.3;
-float foamLife = smoothstep(0.0, ${fixed(SWASH_ONSET)}, swTau) * smoothstep(${fixed(SWASH_FOAM_END)}, 0.32, swTau);
-float edgeFoam = (bead * lerp(0.45, 1.1, foamLife) * lerp(0.35, 1.0, edgePatch) + trail * lerp(0.12, 0.4, foamLife) * edgePatch) * smoothstep(0.0, 1.0, swRt) * smoothstep(0.4, -0.2, depth);
+float edgeFoam = (bead * lerp(0.45, 1.1, uprush) * lerp(0.35, 1.0, edgePatch) + trail * lerp(0.12, 0.4, uprush) * edgePatch) * smoothstep(0.0, 1.0, swRt) * smoothstep(0.4, -0.2, depth);
 float2 stateUv = (xz - ${fixed(SHORE_ORIGIN)}) / ${fixed(SHORE_EXTENT)};
 float4 simState = shoreOn > 0.5 ? St.SampleLevel(StSampler, stateUv, 0.0) * sf.Inside(xz) : 0.0;
-uint off = uint(layersOff + 0.5);
-float simFoam = simState.x * (1.0 - face * 0.72) * ((off & 2u) != 0u ? 0.0 : 1.0);
-float fresh = shoreFoam * ((off & 4u) != 0u ? 0.0 : 1.0) + edgeFoam * ((off & 32u) != 0u ? 0.0 : 1.0);
+float simFoam = simState.x * (1.0 - face * 0.72);
+float fresh = shoreFoam + edgeFoam;
 float foamSum = simFoam + fresh * 0.55 + wakeHere.w;
 float aeration = saturate(fresh * 1.2 + simFoam * 0.7) * (1.0 - face) * smoothstep(-0.1, 0.3, depth);
 float whitecaps = vfoamIn.x + saturate((${fixed(FOAM.bias)} - 0.15 - jac) * 2.0);
@@ -287,7 +283,7 @@ float alpha2 = ${fixed(WATER_ROUGHNESS * WATER_ROUGHNESS)} + mss * 2.0 * unresol
 Foam = foam;
 Rough = pow(alpha2, 0.25);
 Medium = float2(math.SurfMedium(fieldHere, depth) * (saturate(simState.x * 2.5) * 1.8 + 0.45), aeration);
-Edge = smoothstep(0.0, clamp(fwidth(thickness) * 1.5, 0.004, 0.03), thickness) * ((off & 1u) != 0u && depth < 1.0 ? 0.0 : 1.0);
+Edge = smoothstep(0.0, clamp(fwidth(thickness) * 1.5, 0.004, 0.03), thickness);
 float3 L = normalize(float3(sun.x, sun.z, sun.y));
 float3 Tr = refract(-V, nY, 1.0 / 1.33);
 float3 Tv = normalize(float3(Tr.x, min(Tr.y, -0.08), Tr.z));

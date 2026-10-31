@@ -15,13 +15,11 @@ export const SHORE = {
   curl: 1,
   alongSigma: 2.5,
   filmFloor: 0.35,
-  filmReach: 1.6,
   runup: SWASH_RUNUP,
   turbidity: 0.16,
   beachSlope: 0.066,
   swashUp: 0.4,
   swashOnset: 0.2,
-  boreFoamFade: 1.5,
   swashDown: 0.55,
   swashOvershoot: 1.2,
   deep: 26,
@@ -231,10 +229,6 @@ const WAVES = `
     ph.s = (time - ph.T) / ${f(SHORE.period)} + Wobble(ph.along);
     return ph;
   }
-  float Drain(float along, float m) {
-    float shape = 0.5 + 0.2 * sin(along * 0.23 + 1.3) + 0.13 * sin(along * 0.57 + 4.1) + 0.1 * sin(along * 1.31 + 2.2) + 0.07 * sin(along * 2.9 + 0.7);
-    return shape * (0.55 + 0.45 * Hash1(m * 1.37 + 5.1));
-  }
   OceanShoreRunup SwashRunup(float4 sh, float along, float groundH) {
     OceanShoreRunup r;
     float Tp = ${f(SHORE.period)};
@@ -250,15 +244,10 @@ const WAVES = `
     r.isUp = r.tau < ${f(SHORE.swashUp)};
     float Rh = (r.isUp ? 1.0 - pow(1.0 - r.su, 1.5) : 1.0 - pow(r.sb, 1.6)) * r.RhMax - 0.3;
     float lobes = sin(along * 0.61 + ms * 2.3) * 0.5 + sin(along * 1.73 + ms * 5.1) * 0.3 + sin(along * 4.3 + ms * 1.7) * 0.2;
-    float drain = lerp(Drain(along, ms), Drain(along, ms + 1.0), r.tau);
-    float floorRt = ${f(SHORE.filmFloor)} + drain * ${f(SHORE.filmReach)};
     float lobedRh = Rh + lobes * (max(Rh, 0.0) * 0.07 + 0.35);
-    r.Rt = max(lobedRh, floorRt) * enabled;
-    r.edgeTau = lerp(r.tau, 1.0, smoothstep(-0.3, 0.3, floorRt - lobedRh));
+    r.Rt = max(lobedRh, ${f(SHORE.filmFloor)}) * enabled;
+    r.edgeTau = lerp(r.tau, 1.0, smoothstep(-0.3, 0.3, ${f(SHORE.filmFloor)} - lobedRh));
     return r;
-  }
-  float UnderSheet(float front, float groundH) {
-    return lerp(1.0, smoothstep(0.0, ${f(SHORE.boreFoamFade)}, front), smoothstep(-0.1, 0.05, groundH));
   }
   float4 SwashEdge(Texture2D H, Texture2D S, float2 p, float t) {
     float4 o = float4(t, 1e3, 0.0, 0.0);
@@ -337,7 +326,7 @@ const WAVES = `
     if (s0.foam * env != 0.0) wwPatch = smoothstep(-0.5, 0.45, Perlin2(float2(ph.along * 0.06, m * 2.9 + 0.4)));
     OceanShoreSample o;
     o.disp = disp; o.nShore = nShore; o.env = env;
-    o.foam = s0.foam * env * lerp(0.3, 1.0, wwPatch) * UnderSheet(front, groundH);
+    o.foam = s0.foam * env * lerp(0.3, 1.0, wwPatch);
     o.swashLevel = groundH + thick; o.face = face; o.roller = roller;
     return o;
   }
@@ -408,7 +397,7 @@ const WAVES = `
     float wwPatch = 0.0;
     if (whitewater * env != 0.0) wwPatch = smoothstep(-0.5, 0.45, Perlin2(float2(ph.along * 0.06, m * 2.9 + 0.4)));
     OceanShoreWorld o;
-    o.foam = whitewater * env * lerp(0.3, 1.0, wwPatch) * UnderSheet(front, groundH);
+    o.foam = whitewater * env * lerp(0.3, 1.0, wwPatch);
     o.swashFoam = edge * 0.9;
     o.runup = swr.Rt; o.inland = swr.inland;
     o.dir = ph.dir; o.flow = ph.dir * uFlow;

@@ -11,7 +11,6 @@ import { CASCADES, FFT_SIZE, FOAM_PATTERN_SIZE, LACE_SIZE, SHORE_SIM_RES } from 
 import { DETAIL_RES, detailSampler, lodTable, markFinerNeighbours, NODE_FLOATS, OCEAN_LOD, selectNodes, surfDetailField, type Plane } from './lod';
 import { useWake } from './useWake';
 import { Breakers } from './Breakers';
-import { useOceanLayers } from './useOceanLayers';
 import { SHORE_EXTENT, SHORE_ORIGIN } from '../assets/ocean/oceanShore';
 import { computeShoreField, type ShoreDomain, type ShoreFieldData } from './shoreField';
 
@@ -170,7 +169,6 @@ export function Ocean({ seaLevel = 0, shore }: { seaLevel?: number; shore?: Shor
   const targets = useTargets();
   const surface = useSurface(targets, shore);
   const wake = useWake(shore, surface);
-  useOceanLayers(surface);
   useShoreSim(shore);
   const waves = useCompute(oceanWaves);
   const foam = useCompute(oceanFoamPattern);
