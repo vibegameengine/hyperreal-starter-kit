@@ -353,8 +353,10 @@ void VgeRetargeter::FinishSequence(UAnimSequence* Sequence, const TSharedPtr<FJs
 		AddSpeedCurves(Sequence, *SpeedCurves);
 	}
 	Sequence->bLoop = bLoop;
-	Sequence->bEnableRootMotion = true;
-	Sequence->bForceRootLock = true;
+	const USkeleton* Skeleton = Sequence->GetSkeleton();
+	const bool bRootOnGround = Skeleton && Skeleton->GetReferenceSkeleton().GetRawBoneNum() > 0 && Skeleton->GetReferenceSkeleton().GetRefBonePose()[0].GetLocation().Size() < 1.0;
+	Sequence->bEnableRootMotion = bRootOnGround;
+	Sequence->bForceRootLock = bRootOnGround;
 	const TSharedPtr<FJsonObject>* SequenceFields = nullptr;
 	if (Request->TryGetObjectField(TEXT("sequence"), SequenceFields))
 	{
