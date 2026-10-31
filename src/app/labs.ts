@@ -58,20 +58,6 @@ export const LABS: readonly DevLab[] = [
     load: () => import('../features/demo/labs/flight-case'),
   }),
   defineLab({
-    id: 'girl-player',
-    title: 'Girl player',
-    description: 'The tripo-girl prefab as the player: close over-the-shoulder camera, walk and Shift to run, soft tissue, hair and gear physics, a rim light that draws her outline. The base for motion matching.',
-    category: 'character',
-    load: () => import('../features/character/labs/girl-player'),
-  }),
-  defineLab({
-    id: 'girl-stand',
-    title: 'Girl stand',
-    description: 'The tripo girl driven by scripted runs instead of the keys (idle, start, stop, turns, walk to run) while every frame of her bones is checked for pops, jumps, foot slides and broken knees, each tied to the motion-matching clip that played it.',
-    category: 'character',
-    load: () => import('../features/character/labs/girl-stand'),
-  }),
-  defineLab({
     id: 'growth',
     title: 'Growth',
     description: 'The valley grows around the walking player: a world-space mask painted into a render target every frame lays the road, raises the grass and springs the trees up where the player has been.',
@@ -149,13 +135,6 @@ export const LABS: readonly DevLab[] = [
     load: () => import('../features/demo/labs/nanite'),
   }),
   defineLab({
-    id: 'outfit',
-    title: 'Outfit',
-    description: 'Clothes on Manny without cloth simulation: each garment skinned to his skeleton is its own JSX element with live sliders for layer order, size and position; the body yields under a garment, and of two garments the upper moves out while the lower bends in. Sneakers, sunglasses and a watch ride his bones rigidly.',
-    category: 'character',
-    load: () => import('../features/character/labs/outfit'),
-  }),
-  defineLab({
     id: 'particles',
     title: 'Particles',
     description: 'Niagara systems written in TypeScript (features/fx/assets/effects.ts): GPU sparks with user parameters, a burst, a ribbon and mesh particles; save the module and they rebuild live.',
@@ -198,13 +177,6 @@ export const LABS: readonly DevLab[] = [
     load: () => import('../features/fx/labs/sandstorm'),
   }),
   defineLab({
-    id: 'soft-tissue',
-    title: 'Soft tissue',
-    description: 'The Tripo girl walking and jogging on Manny clips while <animDynamics> moves her breast and butt bones: physics on and off, stiffness and damping live.',
-    category: 'character',
-    load: () => import('../features/character/labs/soft-tissue'),
-  }),
-  defineLab({
     id: 'sound',
     title: 'Sound',
     description: 'Sound files imported like models (features/fx/assets/sounds): a speaker circling the stage ticks in 3D, effects play in 2D, and a long pad plays as music.',
@@ -217,13 +189,6 @@ export const LABS: readonly DevLab[] = [
     description: 'Five cubes on the lab stage, driven by a script timer.',
     category: 'world',
     load: () => import('../features/demo/labs/spinning-cubes'),
-  }),
-  defineLab({
-    id: 'tripo-girl',
-    title: 'Tripo girl as the player',
-    description: "The modular Tripo character (body, separate head and hair, Mixamo rig with breast and butt bones) as the player's body: Manny's controls, locomotion graph and unarmed set retargeted onto her with ?retargetFrom=manny. Switch to Manny to compare.",
-    category: 'character',
-    load: () => import('../features/character/labs/tripo-girl'),
   }),
   defineLab({
     id: 'valley',

@@ -8,7 +8,6 @@ import { MixamoCharacterLabHud } from './hud/MixamoCharacterLabHud';
 import { MixamoToMannyLabHud } from './hud/MixamoToMannyLabHud';
 import { MotionMatchingLabHud } from './hud/MotionMatchingLabHud';
 import { FixedStepLabHud } from './hud/FixedStepLabHud';
-import { GirlPlayerLabHud } from './hud/GirlPlayerLabHud';
 import { FlightCaseLabHud } from './hud/FlightCaseLabHud';
 import { InstancingLabHud } from './hud/InstancingLabHud';
 import { LumenLabHud } from './hud/LumenLabHud';
@@ -22,11 +21,8 @@ import { PhysicsLabHud } from './hud/PhysicsLabHud';
 import { RagdollLabHud } from './hud/RagdollLabHud';
 import { PlaygroundLabHud } from './hud/PlaygroundLabHud';
 import { SandstormLabHud } from './hud/SandstormLabHud';
-import { SoftTissueLabHud } from './hud/SoftTissueLabHud';
 import { SoundLabHud } from './hud/SoundLabHud';
 import { SpinningCubesLabHud } from './hud/SpinningCubesLabHud';
-import { TripoGirlLabHud } from './hud/TripoGirlLabHud';
-import { OutfitLabHud } from './hud/OutfitLabHud';
 import { VolumetricsLabHud } from './hud/VolumetricsLabHud';
 import { PcgLabHud } from './hud/PcgLabHud';
 import { DestructionLabHud } from './hud/DestructionLabHud';
@@ -59,10 +55,6 @@ createRoot(document.getElementById('root')!).render(
     <MixamoToMannyLabHud />
     <MotionMatchingLabHud />
     <CustomPlayerLabHud />
-    <TripoGirlLabHud />
-    <OutfitLabHud />
-    <SoftTissueLabHud />
-    <GirlPlayerLabHud />
     <VolumetricsLabHud />
     <PcgLabHud />
     <DestructionLabHud />
