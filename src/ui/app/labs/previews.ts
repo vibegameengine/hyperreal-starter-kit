@@ -7,6 +7,7 @@ import destruction from '../ui/labs/previews/destruction.webp?url'
 import fixedStep from '../ui/labs/previews/fixed-step.webp?url'
 import flightCase from '../ui/labs/previews/flight-case.webp?url'
 import girlPlayer from '../ui/labs/previews/girl-player.webp?url'
+import girlStand from '../ui/labs/previews/girl-stand.webp?url'
 import growth from '../ui/labs/previews/growth.webp?url'
 import hair from '../ui/labs/previews/hair.webp?url'
 import instancing from '../ui/labs/previews/instancing.webp?url'
@@ -44,6 +45,7 @@ export const LAB_PREVIEWS: Readonly<Record<string, string>> = {
   'fixed-step': fixedStep,
   'flight-case': flightCase,
   'girl-player': girlPlayer,
+  'girl-stand': girlStand,
   growth,
   hair,
   instancing,

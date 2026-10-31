@@ -91,12 +91,99 @@ namespace
 	}
 }
 
+void FVgeAnimNode_GroundedLegs::UpdateInternal(const FAnimationUpdateContext& Context)
+{
+	FAnimNode_FootPlacement::UpdateInternal(Context);
+	StepSeconds += Context.GetDeltaTime();
+}
+
+void FVgeAnimNode_GroundedLegs::PreUpdate(const UAnimInstance* InAnimInstance)
+{
+	const AActor* Owner = InAnimInstance ? InAnimInstance->GetOwningActor() : nullptr;
+	OwnerVelocity = Owner ? Owner->GetVelocity() : FVector::ZeroVector;
+}
+
+void FVgeAnimNode_GroundedLegs::SeparateFeet(FComponentSpacePoseContext& Output, TArray<FBoneTransform>& Placed)
+{
+	const float DeltaSeconds = StepSeconds;
+	StepSeconds = 0.0f;
+	const FBoneContainer& Bones = Output.Pose.GetPose().GetBoneContainer();
+	if (LegDefinitions.Num() != 2 || FeetSeparatingDistance <= 0.0f)
+	{
+		return;
+	}
+	FCompactPoseBoneIndex Feet[2] = { LegDefinitions[0].FKFootBone.GetCompactPoseIndex(Bones), LegDefinitions[1].FKFootBone.GetCompactPoseIndex(Bones) };
+	FBoneTransform* Solved[2] = { nullptr, nullptr };
+	FVector Animated[2];
+	FVector Thigh[2];
+	for (int32 Leg = 0; Leg < 2; ++Leg)
+	{
+		if (!Feet[Leg].IsValid())
+		{
+			return;
+		}
+		const FCompactPoseBoneIndex Knee = Bones.GetParentBoneIndex(Feet[Leg]);
+		const FCompactPoseBoneIndex Hip = Knee.IsValid() ? Bones.GetParentBoneIndex(Knee) : FCompactPoseBoneIndex(INDEX_NONE);
+		Solved[Leg] = Placed.FindByPredicate([&Feet, Leg](const FBoneTransform& Bone) { return Bone.BoneIndex == Feet[Leg]; });
+		if (!Hip.IsValid() || !Solved[Leg])
+		{
+			return;
+		}
+		Animated[Leg] = Output.Pose.GetComponentSpaceTransform(Feet[Leg]).GetLocation();
+		Thigh[Leg] = Output.Pose.GetComponentSpaceTransform(Hip).GetLocation();
+	}
+
+	const FVector2D Side = FVector2D(Thigh[0] - Thigh[1]).GetSafeNormal();
+	if (Side.IsNearlyZero())
+	{
+		return;
+	}
+	const auto GapAlongSide = [&Side](const FVector& Left, const FVector& Right) { return FVector2D::DotProduct(FVector2D(Left - Right), Side); };
+	const float Required = FMath::Min(GapAlongSide(Animated[0], Animated[1]), 2.0f * FeetSeparatingDistance);
+	const float Deficit = Required - GapAlongSide(Solved[0]->Transform.GetLocation(), Solved[1]->Transform.GetLocation());
+
+	const FVector VelocityCS = Output.AnimInstanceProxy->GetComponentTransform().InverseTransformVector(OwnerVelocity);
+	float Free[2];
+	for (int32 Leg = 0; Leg < 2; ++Leg)
+	{
+		const bool bHasLast = LastAnimatedFeet.Num() == 2 && DeltaSeconds > UE_KINDA_SMALL_NUMBER;
+		const FVector FootVelocity = bHasLast ? (Animated[Leg] - LastAnimatedFeet[Leg]) / DeltaSeconds + VelocityCS : FVector::ZeroVector;
+		const float Speed = FVector2D(FootVelocity).Size();
+		Free[Leg] = FMath::SmoothStep(PlantSettings.SpeedThreshold, 2.0f * PlantSettings.SpeedThreshold, Speed);
+	}
+	LastAnimatedFeet = { Animated[0], Animated[1] };
+
+	FVector2D Wanted[2] = { FVector2D::ZeroVector, FVector2D::ZeroVector };
+	const float TotalFree = Free[0] + Free[1];
+	if (Deficit > 0.0f && TotalFree > 1.0e-3f)
+	{
+		Wanted[0] = Side * (Deficit * Free[0] / TotalFree);
+		Wanted[1] = -Side * (Deficit * Free[1] / TotalFree);
+	}
+
+	SeparationOffset.SetNumZeroed(2);
+	SeparationVelocity.SetNumZeroed(2);
+	const float Frequency = FMath::Sqrt(FMath::Max(0.0f, FeetSeparationStiffness));
+	for (int32 Leg = 0; Leg < 2; ++Leg)
+	{
+		if (DeltaSeconds > 0.0f)
+		{
+			const float Damped = 1.0f + 2.0f * DeltaSeconds * FeetSeparationDamping * Frequency;
+			const float Determinant = Damped + DeltaSeconds * DeltaSeconds * Frequency * Frequency;
+			SeparationVelocity[Leg] = (SeparationVelocity[Leg] + DeltaSeconds * Frequency * Frequency * (Wanted[Leg] - SeparationOffset[Leg])) / Determinant;
+			SeparationOffset[Leg] += DeltaSeconds * SeparationVelocity[Leg];
+		}
+		Solved[Leg]->Transform.AddToTranslation(FVector(SeparationOffset[Leg], 0.0));
+	}
+}
+
 void FVgeAnimNode_GroundedLegs::EvaluateSkeletalControl_AnyThread(FComponentSpacePoseContext& Output, TArray<FBoneTransform>& OutBoneTransforms)
 {
 	TArray<FBoneTransform> Placed;
 	FComponentSpacePoseContext Leveled(Output);
 	CopyLeveled(Output, Leveled);
 	FAnimNode_FootPlacement::EvaluateSkeletalControl_AnyThread(Leveled, Placed);
+	SeparateFeet(Output, Placed);
 	TArray<FBoneReference> Feet;
 	for (const FFootPlacemenLegDefinition& Leg : LegDefinitions)
 	{

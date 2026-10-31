@@ -275,7 +275,7 @@ namespace
 	{
 		if (Prop == TEXT("defaultBlendProfile")) return EPropKind::Object;
 		if (Prop == TEXT("filteredCurves") || Prop == TEXT("filteredBones")) return EPropKind::Json;
-		if (Prop == TEXT("resetOnBecomingRelevant")) return EPropKind::Number;
+		if (Prop == TEXT("resetOnBecomingRelevant") || Prop == TEXT("springDamping")) return EPropKind::Number;
 		if (Prop == TEXT("tag")) return EPropKind::Text;
 		return EPropKind::None;
 	}
@@ -295,6 +295,7 @@ namespace
 		}
 		else if (Prop == TEXT("resetOnBecomingRelevant")) Inertialization->bResetOnBecomingRelevant = IsTrue(Value);
 		else if (Prop == TEXT("tag")) Inertialization->Tag = FName(*Value.Text);
+		else if (Prop == TEXT("springDamping")) Inertialization->SpringDamping = AsFloat(Value);
 		return false;
 	}
 

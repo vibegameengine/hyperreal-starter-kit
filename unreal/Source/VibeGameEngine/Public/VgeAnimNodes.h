@@ -92,6 +92,9 @@ struct FVgeAnimNode_Inertialization : public FAnimNode_Base
 	UPROPERTY()
 	FName Tag = NAME_None;
 
+	UPROPERTY()
+	float SpringDamping = 0.0f;
+
 	PRAGMA_DISABLE_DEPRECATION_WARNINGS
 	FVgeAnimNode_Inertialization() = default;
 	FVgeAnimNode_Inertialization(const FVgeAnimNode_Inertialization&) = default;
@@ -114,6 +117,7 @@ struct FVgeAnimNode_Inertialization : public FAnimNode_Base
 
 private:
 	void Deactivate();
+	float Offset(float x0, float v0, float t, float t1) const;
 	void InitFrom(const FCompactPose& InPose, const FBlendedCurve& InCurves, const UE::Anim::FStackAttributeContainer& InAttributes, const FTransform& ComponentTransform, FName AttachParentName, const FVgeInertializationSparsePose& Prev1, const FVgeInertializationSparsePose& Prev2);
 	void ApplyTo(FCompactPose& InOutPose, FBlendedCurve& InOutCurves, UE::Anim::FStackAttributeContainer& InOutAttributes);
 

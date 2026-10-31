@@ -14,6 +14,11 @@
 #include "Engine/LevelStreamingDynamic.h"
 #include "Animation/AnimClassInterface.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimSequenceBase.h"
+#include "Animation/AnimationPoseData.h"
+#include "Animation/AttributesRuntime.h"
+#include "BonePose.h"
+#include "Engine/SkeletalMesh.h"
 #include "PoseSearch/AnimNode_MotionMatching.h"
 #include "PoseSearch/MotionMatchingAnimNodeLibrary.h"
 #include "DynamicRHI.h"
@@ -91,6 +96,82 @@ int32 UVgeScriptLibrary::SetAnimNodeFields(UAnimInstance* Instance, const FStrin
 		}
 	}
 	return Written;
+}
+
+FString UVgeScriptLibrary::GetAnimNodeFields(UAnimInstance* Instance, const FString& NodeStruct)
+{
+	const IAnimClassInterface* AnimClass = Instance ? IAnimClassInterface::GetFromClass(Instance->GetClass()) : nullptr;
+	if (!AnimClass)
+	{
+		return FString();
+	}
+	for (const FStructProperty* Node : AnimClass->GetAnimNodeProperties())
+	{
+		for (const UStruct* Struct = Node->Struct; Struct; Struct = Struct->GetSuperStruct())
+		{
+			FString Json;
+			if (Struct->GetName() == NodeStruct && FJsonObjectConverter::UStructToJsonObjectString(Node->Struct, Node->ContainerPtrToValuePtr<void>(Instance), Json, 0, 0, 0, nullptr, false))
+			{
+				return Json;
+			}
+		}
+	}
+	return FString();
+}
+
+TArray<FVector> UVgeScriptLibrary::SampleClipRootMotion(UAnimSequenceBase* Clip, float StepSeconds)
+{
+	TArray<FVector> Positions;
+	if (!Clip || StepSeconds <= 0.0f)
+	{
+		return Positions;
+	}
+	const float Length = Clip->GetPlayLength();
+	for (float Time = 0.0f; Time <= Length + KINDA_SMALL_NUMBER; Time += StepSeconds)
+	{
+		Positions.Add(Clip->ExtractRootMotionFromRange(0.0, FMath::Min(Time, Length), FAnimExtractContext()).GetTranslation());
+	}
+	return Positions;
+}
+
+TArray<FVector> UVgeScriptLibrary::SampleClipBones(UAnimSequenceBase* Clip, USkeletalMesh* Mesh, const TArray<FName>& Bones, float StepSeconds)
+{
+	TArray<FVector> Positions;
+	if (!Clip || !Mesh || StepSeconds <= 0.0f)
+	{
+		return Positions;
+	}
+	FMemMark Mark(FMemStack::Get());
+	const FReferenceSkeleton& Reference = Mesh->GetRefSkeleton();
+	TArray<FBoneIndexType> Required;
+	for (int32 Bone = 0; Bone < Reference.GetNum(); ++Bone)
+	{
+		Required.Add(static_cast<FBoneIndexType>(Bone));
+	}
+	FBoneContainer Container(Required, UE::Anim::FCurveFilterSettings(), *Mesh);
+	TArray<FCompactPoseBoneIndex> Sampled;
+	for (const FName& Name : Bones)
+	{
+		Sampled.Add(Container.MakeCompactPoseIndex(FMeshPoseBoneIndex(Reference.FindBoneIndex(Name))));
+	}
+	FCompactPose Pose;
+	Pose.SetBoneContainer(&Container);
+	FBlendedCurve Curve;
+	Curve.InitFrom(Container);
+	UE::Anim::FStackAttributeContainer Attributes;
+	FAnimationPoseData PoseData(Pose, Curve, Attributes);
+	const float Length = Clip->GetPlayLength();
+	for (float Time = 0.0f; Time <= Length + KINDA_SMALL_NUMBER; Time += StepSeconds)
+	{
+		Clip->GetAnimationPose(PoseData, FAnimExtractContext(static_cast<double>(FMath::Min(Time, Length))));
+		FCSPose<FCompactPose> ComponentSpace;
+		ComponentSpace.InitPose(Pose);
+		for (const FCompactPoseBoneIndex& Bone : Sampled)
+		{
+			Positions.Add(Bone.IsValid() ? ComponentSpace.GetComponentSpaceTransform(Bone).GetLocation() : FVector::ZeroVector);
+		}
+	}
+	return Positions;
 }
 
 ULevelStreamingDynamic* UVgeScriptLibrary::LoadLevelInstance(UObject* WorldContext, const FString& PackageName, FVector Location)

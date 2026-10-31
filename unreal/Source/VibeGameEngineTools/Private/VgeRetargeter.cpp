@@ -27,13 +27,49 @@ namespace
 {
 	// FProceduralRetargetAssets::AutoGenerateIKRigAsset: an IK Rig for the mesh, its retarget chains characterized
 	// from the skeleton, and full-body IK generated.
+	FName ChainStartContaining(const TArray<FBoneChain>& Chains, const TCHAR* Name)
+	{
+		const FBoneChain* Chain = Chains.FindByPredicate([Name](const FBoneChain& Each) { return Each.ChainName.ToString().Contains(Name); });
+		return Chain ? Chain->StartBone.BoneName : NAME_None;
+	}
+
+	FName CommonParentOfLegs(const FReferenceSkeleton& Skeleton, const TArray<FBoneChain>& Chains)
+	{
+		const int32 Left = Skeleton.FindBoneIndex(ChainStartContaining(Chains, TEXT("LeftLeg")));
+		const int32 Right = Skeleton.FindBoneIndex(ChainStartContaining(Chains, TEXT("RightLeg")));
+		if (Left == INDEX_NONE || Right == INDEX_NONE)
+		{
+			return NAME_None;
+		}
+		TSet<int32> LeftAncestors;
+		for (int32 Bone = Skeleton.GetParentIndex(Left); Bone != INDEX_NONE; Bone = Skeleton.GetParentIndex(Bone))
+		{
+			LeftAncestors.Add(Bone);
+		}
+		for (int32 Bone = Skeleton.GetParentIndex(Right); Bone != INDEX_NONE; Bone = Skeleton.GetParentIndex(Bone))
+		{
+			if (LeftAncestors.Contains(Bone))
+			{
+				return Skeleton.GetBoneName(Bone);
+			}
+		}
+		return NAME_None;
+	}
+
 	UIKRigDefinition* AutoGenerateIKRig(USkeletalMesh* Mesh, FAutoCharacterizeResults& Characterization)
 	{
 		UIKRigDefinition* Rig = NewObject<UIKRigDefinition>(GetTransientPackage(), MakeUniqueObjectName(GetTransientPackage(), UIKRigDefinition::StaticClass(), TEXT("VgeRetargetIKRig")), RF_Public | RF_Standalone);
 		const UIKRigController* Controller = UIKRigController::GetController(Rig);
 		Controller->SetSkeletalMesh(Mesh);
 		Controller->AutoGenerateRetargetDefinition(Characterization);
-		Controller->SetRetargetDefinition(Characterization.AutoRetargetDefinition.RetargetDefinition);
+		FRetargetDefinition& Definition = Characterization.AutoRetargetDefinition.RetargetDefinition;
+		const FName Pelvis = CommonParentOfLegs(Mesh->GetRefSkeleton(), Definition.BoneChains);
+		if (!Pelvis.IsNone() && Pelvis != Definition.PelvisBone)
+		{
+			UE_LOGF(LogVgeRetarget, Display, "%ls: pelvis %ls replaced by %ls, the bone both legs hang from", *Mesh->GetName(), *Definition.PelvisBone.ToString(), *Pelvis.ToString());
+			Definition.PelvisBone = Pelvis;
+		}
+		Controller->SetRetargetDefinition(Definition);
 		FAutoFBIKResults IKResults;
 		Controller->AutoGenerateFBIK(IKResults);
 		return Rig;

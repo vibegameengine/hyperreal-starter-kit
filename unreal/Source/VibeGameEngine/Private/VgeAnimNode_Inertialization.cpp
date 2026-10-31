@@ -128,6 +128,31 @@ namespace
 		const float x = (((((A * t) + B) * t + C) * t + D) * t + v0) * t + x0;
 		return x * Sign;
 	}
+
+	constexpr float SpringSettleExponent = 6.0f;
+	constexpr float SpringMinimumDamping = 0.05f;
+
+	float SpringOffset(float x0, float v0, float t, float t1, float Damping)
+	{
+		if (t >= t1 - InertializationTimeEpsilon)
+		{
+			return 0.0f;
+		}
+		const float Zeta = FMath::Max(Damping, SpringMinimumDamping);
+		const float Omega = SpringSettleExponent / (FMath::Min(Zeta, 1.0f) * t1);
+		const float Decay = FMath::Exp(-Zeta * Omega * t);
+		if (Zeta >= 1.0f)
+		{
+			return Decay * (x0 + (v0 + Omega * x0) * t);
+		}
+		const float DampedOmega = Omega * FMath::Sqrt(1.0f - Zeta * Zeta);
+		return Decay * (x0 * FMath::Cos(DampedOmega * t) + (v0 + Zeta * Omega * x0) / DampedOmega * FMath::Sin(DampedOmega * t));
+	}
+}
+
+float FVgeAnimNode_Inertialization::Offset(float x0, float v0, float t, float t1) const
+{
+	return SpringDamping > 0.0f ? SpringOffset(x0, v0, t, t1, SpringDamping) : CalcInertialFloat(x0, v0, t, t1);
 }
 
 void FVgeAnimNode_Inertialization::RequestInertialization(const FInertializationRequest& Request)
@@ -612,15 +637,15 @@ void FVgeAnimNode_Inertialization::ApplyTo(FCompactPose& InOutPose, FBlendedCurv
 		const float Duration = InertializationDurationPerBone[SkeletonPoseBoneIndex];
 
 		const FVector T = (FVector)BoneTranslationDiffDirection[InertializationBoneIndex] *
-			CalcInertialFloat(BoneTranslationDiffMagnitude[InertializationBoneIndex], BoneTranslationDiffSpeed[InertializationBoneIndex], InertializationElapsedTime, Duration);
+			Offset(BoneTranslationDiffMagnitude[InertializationBoneIndex], BoneTranslationDiffSpeed[InertializationBoneIndex], InertializationElapsedTime, Duration);
 		InOutPose[BoneIndex].AddToTranslation(T);
 
 		const FQuat Q = FQuat((FVector)BoneRotationDiffAxis[InertializationBoneIndex],
-			CalcInertialFloat(BoneRotationDiffAngle[InertializationBoneIndex], BoneRotationDiffSpeed[InertializationBoneIndex], InertializationElapsedTime, Duration));
+			Offset(BoneRotationDiffAngle[InertializationBoneIndex], BoneRotationDiffSpeed[InertializationBoneIndex], InertializationElapsedTime, Duration));
 		InOutPose[BoneIndex].SetRotation(Q * InOutPose[BoneIndex].GetRotation());
 
 		const FVector S = (FVector)BoneScaleDiffAxis[InertializationBoneIndex] *
-			CalcInertialFloat(BoneScaleDiffMagnitude[InertializationBoneIndex], BoneScaleDiffSpeed[InertializationBoneIndex], InertializationElapsedTime, Duration);
+			Offset(BoneScaleDiffMagnitude[InertializationBoneIndex], BoneScaleDiffSpeed[InertializationBoneIndex], InertializationElapsedTime, Duration);
 		InOutPose[BoneIndex].SetScale3D(S + InOutPose[BoneIndex].GetScale3D());
 	}
 
@@ -636,7 +661,7 @@ void FVgeAnimNode_Inertialization::ApplyTo(FCompactPose& InOutPose, FBlendedCurv
 				OutResultElement.Flags = InElement0.Flags;
 				return;
 			}
-			OutResultElement.Value = InElement0.Value + CalcInertialFloat(InElement1.Delta, InElement1.Derivative, InertializationElapsedTime, InertializationDuration);
+			OutResultElement.Value = InElement0.Value + Offset(InElement1.Delta, InElement1.Derivative, InertializationElapsedTime, InertializationDuration);
 			OutResultElement.Flags = InElement0.Flags | InElement1.Flags;
 		});
 

@@ -76,6 +76,15 @@ export function WindowChrome() {
             {each.label}
           </button>
         ))}
+        <button
+          className={styles.section}
+          data-testid="nav-fab"
+          onClick={() => void ask({ cmd: 'fab.open' }).catch((error: Error) => console.error(`[fab] ${error.message}`))}
+          title="Open Fab, the asset store"
+          type="button"
+        >
+          Fab
+        </button>
       </nav>
       <span className={styles.title} data-testid="window-title">
         {titleOf(path)}

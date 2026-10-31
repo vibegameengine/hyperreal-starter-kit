@@ -65,6 +65,13 @@ export const LABS: readonly DevLab[] = [
     load: () => import('../features/character/labs/girl-player'),
   }),
   defineLab({
+    id: 'girl-stand',
+    title: 'Girl stand',
+    description: 'The tripo girl driven by scripted runs instead of the keys (idle, start, stop, turns, walk to run) while every frame of her bones is checked for pops, jumps, foot slides and broken knees, each tied to the motion-matching clip that played it.',
+    category: 'character',
+    load: () => import('../features/character/labs/girl-stand'),
+  }),
+  defineLab({
     id: 'growth',
     title: 'Growth',
     description: 'The valley grows around the walking player: a world-space mask painted into a render target every frame lays the road, raises the grass and springs the trees up where the player has been.',

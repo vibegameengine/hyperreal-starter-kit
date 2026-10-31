@@ -1,17 +1,32 @@
 import * as UE from 'ue';
-import { $ref, $unref } from 'puerts';
+import { $ref, $unref, type $Ref } from 'puerts';
 import { useEffect, useMemo, useRef, type ComponentType, type ReactNode, type RefObject } from 'react';
 import { world } from '../../../shared/engine/world';
 import { isGameInputHeld } from '../../../shared/engine/gameInput';
 import { isMouseCaptured } from '../../../shared/engine/mouse';
-import { useFrame, useMotionMatchingClass, useMouseCapture } from '../../../shared/react';
+import { param, useFrame, useMotionMatchingClass, useMouseCapture } from '../../../shared/react';
 import type { MotionMatchingRef } from '../../../shared/motion';
 import type { Vector3 } from '../../../shared/react/props';
 import { MANNEQUIN_MESHES, type MannequinVariant } from './mannequin';
 import { GroundedLegs, type GroundedSkeleton } from './GroundedLegs';
-import { useMotionSituation, type MotionSituations } from './motionSituation';
-import { MannequinLocomotion, setLocomotion, type LocomotionClips } from './MannequinLocomotion';
+import { setRunning, useMotionSituation, type MotionSituations } from './motionSituation';
+import { MannequinLocomotion, setLocomotion, type LayerWeights, type LocomotionClips } from './MannequinLocomotion';
 import { LivePosture, type PostureSource } from '../posture/Posture';
+import { aimOf, aimPosture, stepAim } from './aim';
+import { stepGlider } from './gliderRide';
+import { stepClimb, tryStartClimb, type ClimbClip } from './climb';
+
+function useClimbClip(look: PlayerLook | undefined, pelvis: string): ClimbClip | undefined {
+  return useMemo(() => {
+    const clip = look?.clips.climb ? (UE.Object.Load(look.clips.climb) as UE.AnimSequenceBase | undefined) : undefined;
+    const mesh = typeof look?.mesh === 'string' ? (UE.Object.Load(look.mesh) as UE.SkeletalMesh | undefined) : look?.mesh;
+    return clip && mesh ? { clip, mesh, pelvis } : undefined;
+  }, [look?.clips.climb, look?.mesh, pelvis]);
+}
+
+const LAYER_BLEND_SECONDS = 0.25;
+const approach = (from: number, to: number, deltaSeconds: number) => (to > from ? Math.min(to, from + deltaSeconds / LAYER_BLEND_SECONDS) : Math.max(to, from - deltaSeconds / LAYER_BLEND_SECONDS));
+import { JointNoise, type NoisyJoint } from '../posture/JointNoise';
 
 const CAPSULE_HALF_HEIGHT = 88;
 const CAMERA_START_PITCH = -18;
@@ -64,7 +79,12 @@ export interface PlayerLook {
   clips: LocomotionClips;
   secondary?: ComponentType<SecondaryMotionProps>;
   posture?: PostureSource;
+  jointNoise?: readonly NoisyJoint[];
+  springDamping?: number;
+  aimSpine?: readonly string[];
 }
+
+const MANNY_SPINE = ['spine_01', 'spine_02', 'spine_03'];
 
 export interface PlayerProps {
   at: Vector3;
@@ -76,6 +96,44 @@ export interface PlayerProps {
   camera?: PlayerCamera;
   pace?: PlayerPace;
   cameraRig?: ReactNode;
+  drive?: PlayerDrive;
+}
+
+export interface PlayerInput {
+  x: number;
+  y: number;
+  run: boolean;
+  jumping: boolean;
+}
+
+export interface PlayerView {
+  yaw: number;
+  pitch: number;
+}
+
+export type PlayerDrive = (view: PlayerView) => PlayerInput | undefined;
+
+interface MouseDelta {
+  x: $Ref<number>;
+  y: $Ref<number>;
+}
+
+function readInput(controller: UE.PlayerController, view: PlayerView, deltaSeconds: number, mouse: MouseDelta): PlayerInput {
+  let turnX = stick(controller, KEYS.lookX) * STICK_DEGREES_PER_SECOND * deltaSeconds;
+  let turnY = stick(controller, KEYS.lookY) * STICK_DEGREES_PER_SECOND * deltaSeconds;
+  if (isMouseCaptured()) {
+    controller.GetInputMouseDelta(mouse.x, mouse.y);
+    turnX += $unref(mouse.x) * MOUSE_DEGREES_PER_UNIT;
+    turnY += $unref(mouse.y) * MOUSE_DEGREES_PER_UNIT;
+  }
+  view.yaw = (view.yaw + turnX) % 360;
+  view.pitch = Math.min(PITCH_RANGE[1], Math.max(PITCH_RANGE[0], view.pitch + turnY));
+  return {
+    x: Math.max(-1, Math.min(1, pressed(controller, KEYS.forward) - pressed(controller, KEYS.back) + stick(controller, KEYS.moveY))),
+    y: Math.max(-1, Math.min(1, pressed(controller, KEYS.right) - pressed(controller, KEYS.left) + stick(controller, KEYS.moveX))),
+    run: controller.IsInputKeyDown(KEYS.run) || controller.IsInputKeyDown(KEYS.padRun),
+    jumping: controller.IsInputKeyDown(KEYS.jump) || controller.IsInputKeyDown(KEYS.padJump),
+  };
 }
 
 function useBodyOf(character: RefObject<UE.Character | null>): RefObject<UE.SkeletalMeshComponent | null> {
@@ -93,26 +151,40 @@ function finishPose(pose: ReactNode, posture: PostureSource | undefined, Seconda
   return Secondary ? <Secondary body={body}>{shaped}</Secondary> : shaped;
 }
 
+function motionPose(motionClass: string, legs: boolean | GroundedSkeleton, jointNoise: readonly NoisyJoint[] | undefined, run: string | undefined) {
+  const matched = <linkedGraph instanceClass={motionClass} />;
+  const running = run ? (
+    <blend alpha={param('runWeight')}>
+      {matched}
+      <clip sequence={run} />
+    </blend>
+  ) : matched;
+  const alive = jointNoise?.length ? <JointNoise joints={jointNoise}>{running}</JointNoise> : running;
+  return legs ? <GroundedLegs skeleton={legs === true ? undefined : legs}>{alive}</GroundedLegs> : alive;
+}
+
 function linkedGraphOf(animation: UE.VgeAnimInstance | null) {
   const id = animation && /linkedGraph#(\d+)/.exec(animation.DescribeGraph())?.[1];
   return id ? animation.GetLinkedInstance(id) : undefined;
 }
 
-export function Player({ at, variant = 'manny', look, motion, situations, legs = true, camera = ORBIT_CAMERA, pace, cameraRig }: PlayerProps) {
+export function Player({ at, variant = 'manny', look, motion, situations, legs = true, camera = ORBIT_CAMERA, pace, cameraRig, drive }: PlayerProps) {
   const character = useRef<UE.Character>(null);
   const body = useBodyOf(character);
   const Secondary = look?.secondary;
   const animation = useRef<UE.VgeAnimInstance>(null);
   const motionClass = useMotionMatchingClass(motion);
+  const heading = useRef({ yaw: 0, pitch: CAMERA_START_PITCH });
+  const posture = useMemo(() => aimPosture(look?.posture, { spine: look?.aimSpine ?? MANNY_SPINE, view: () => heading.current, pawn: () => character.current }), [look?.posture, look?.aimSpine]);
   useMotionSituation(character, () => linkedGraphOf(animation.current), motion ? situations : undefined);
   useEffect(() => {
     UE.GameplayStatics.GetPlayerController(world, 0).Possess(character.current!);
   }, []);
 
   useMouseCapture();
-  const heading = useRef({ yaw: 0, pitch: CAMERA_START_PITCH });
-  const mouseX = $ref(0);
-  const mouseY = $ref(0);
+  const layers = useRef<LayerWeights>({ run: 0, aim: 0, ride: 0, climbing: false });
+  const climbSource = useClimbClip(look, typeof legs === 'object' ? legs.pelvis : 'pelvis');
+  const mouse = { x: $ref(0), y: $ref(0) };
   useFrame((deltaSeconds) => {
     const pawn = character.current;
     if (!pawn) return;
@@ -124,29 +196,24 @@ export function Player({ at, variant = 'manny', look, motion, situations, legs =
     }
 
     const view = heading.current;
-    let turnX = stick(controller, KEYS.lookX) * STICK_DEGREES_PER_SECOND * deltaSeconds;
-    let turnY = stick(controller, KEYS.lookY) * STICK_DEGREES_PER_SECOND * deltaSeconds;
-    if (isMouseCaptured()) {
-      controller.GetInputMouseDelta(mouseX, mouseY);
-      turnX += $unref(mouseX) * MOUSE_DEGREES_PER_UNIT;
-      turnY += $unref(mouseY) * MOUSE_DEGREES_PER_UNIT;
-    }
-    view.yaw = (view.yaw + turnX) % 360;
-    view.pitch = Math.min(PITCH_RANGE[1], Math.max(PITCH_RANGE[0], view.pitch + turnY));
-
+    const { x, y, run, jumping } = drive?.(view) ?? readInput(controller, view, deltaSeconds, mouse);
     const yaw = (view.yaw * Math.PI) / 180;
     const forward = new UE.Vector(Math.cos(yaw), Math.sin(yaw), 0);
     const right = new UE.Vector(-Math.sin(yaw), Math.cos(yaw), 0);
-    const x = Math.max(-1, Math.min(1, pressed(controller, KEYS.forward) - pressed(controller, KEYS.back) + stick(controller, KEYS.moveY)));
-    const y = Math.max(-1, Math.min(1, pressed(controller, KEYS.right) - pressed(controller, KEYS.left) + stick(controller, KEYS.moveX)));
-    if (x) pawn.AddMovementInput(forward, x, false);
-    if (y) pawn.AddMovementInput(right, y, false);
-    if (controller.IsInputKeyDown(KEYS.jump) || controller.IsInputKeyDown(KEYS.padJump)) pawn.Jump();
-    if (pace && !motion) pawn.CharacterMovement.MaxWalkSpeed = controller.IsInputKeyDown(KEYS.run) || controller.IsInputKeyDown(KEYS.padRun) ? pace.runSpeed : pace.walkSpeed;
+    const riding = stepGlider({ pawn, controller, throttle: x, strafe: y, viewYaw: view.yaw, deltaSeconds });
+    const climbing = stepClimb(pawn, deltaSeconds) || (!riding && jumping && !!climbSource && tryStartClimb(pawn, climbSource));
+    const busy = riding || climbing;
+    if (x && !busy) pawn.AddMovementInput(forward, x, false);
+    if (y && !busy) pawn.AddMovementInput(right, y, false);
+    if (!busy && jumping) pawn.Jump();
+    if (motion) setRunning(pawn, run);
+    else if (pace) pawn.CharacterMovement.MaxWalkSpeed = run ? pace.runSpeed : pace.walkSpeed;
+    layers.current = { run: approach(layers.current.run, run && !riding && (x || y) ? 1 : 0, deltaSeconds), aim: aimOf(pawn).blend, ride: approach(layers.current.ride, riding ? 1 : 0, deltaSeconds), climbing };
 
+    stepAim({ pawn, controller, view, rest: camera, deltaSeconds });
     controller.SetControlRotation(new UE.Rotator(view.pitch, view.yaw, 0));
 
-    setLocomotion(animation.current, pawn.CharacterMovement);
+    setLocomotion(animation.current, pawn.CharacterMovement, layers.current);
   });
 
   return (
@@ -160,9 +227,10 @@ export function Player({ at, variant = 'manny', look, motion, situations, legs =
       >
         <MannequinLocomotion
           graph={animation}
-          clips={look?.clips}
-          ground={motionClass && (legs ? <GroundedLegs skeleton={legs === true ? undefined : legs}><linkedGraph instanceClass={motionClass} /></GroundedLegs> : <linkedGraph instanceClass={motionClass} />)}
-          finish={(Secondary || look?.posture) && ((pose) => finishPose(pose, look?.posture, Secondary, body))}
+          clips={look?.clips && { ...look.clips, run: motionClass ? undefined : look.clips.run }}
+          ground={motionClass && motionPose(motionClass, legs, look?.jointNoise, look?.clips.run)}
+          finish={(pose) => finishPose(pose, posture, Secondary, body)}
+          springDamping={look?.springDamping}
         />
         <springArmComponent
           location={[0, 0, camera.height]}

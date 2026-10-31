@@ -65,6 +65,7 @@ export interface InertializeElement extends WithPoses {
   filteredBones?: readonly string[];
   resetOnBecomingRelevant?: boolean;
   tag?: string;
+  springDamping?: number;
 }
 export interface StateMachineElement extends WithPoses {
   entry?: string;

@@ -8,6 +8,8 @@
 
 class UActorComponent;
 class UAnimInstance;
+class UAnimSequenceBase;
+class USkeletalMesh;
 class UInstancedStaticMeshComponent;
 class UPoseSearchDatabase;
 class ULevelStreamingDynamic;
@@ -59,6 +61,15 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Vge")
 	static int32 SetAnimNodeFields(UAnimInstance* Instance, const FString& NodeStruct, const FString& FieldsJson);
+
+	UFUNCTION(BlueprintCallable, Category = "Vge")
+	static FString GetAnimNodeFields(UAnimInstance* Instance, const FString& NodeStruct);
+
+	UFUNCTION(BlueprintCallable, Category = "Vge")
+	static TArray<FVector> SampleClipRootMotion(UAnimSequenceBase* Clip, float StepSeconds);
+
+	UFUNCTION(BlueprintCallable, Category = "Vge")
+	static TArray<FVector> SampleClipBones(UAnimSequenceBase* Clip, USkeletalMesh* Mesh, const TArray<FName>& Bones, float StepSeconds);
 
 	UFUNCTION(BlueprintCallable, Category = "Vge")
 	static void SetInstances(UInstancedStaticMeshComponent* Component, const TArray<FTransform>& Transforms, const TArray<float>& CustomData);

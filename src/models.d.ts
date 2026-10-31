@@ -34,6 +34,10 @@ declare module '*&retarget=manny' {
   const asset: import('./shared/engine/content').ContentAssetRef;
   export default asset;
 }
+declare module '*&retarget=../../tripo-girl/tripo-girl.fbx' {
+  const asset: import('./shared/engine/content').ContentAssetRef;
+  export default asset;
+}
 declare module '*?retargetFrom=../ual/UAL1_Standard.glb' {
   const asset: import('./shared/engine/content').ContentAssetRef;
   export default asset;
